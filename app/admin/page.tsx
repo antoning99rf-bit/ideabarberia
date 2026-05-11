@@ -145,6 +145,10 @@ export default function AdminPage() {
     setStatus("Servicio desactivado.");
   }
 
+  async function activateService(service: ServiceItem) {
+    await saveService({ ...service, active: true });
+  }
+
   async function addBlock(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setStatus("Bloqueando hora...");
@@ -514,10 +518,20 @@ export default function AdminPage() {
                           <button
                             className="button button-secondary"
                             onClick={() => removeService(service.id)}
+                            disabled={!service.active}
                             type="button"
                           >
-                            Quitar
+                            Desactivar
                           </button>
+                          {!service.active ? (
+                            <button
+                              className="button button-secondary"
+                              onClick={() => activateService(service)}
+                              type="button"
+                            >
+                              Activar
+                            </button>
+                          ) : null}
                         </div>
                       </td>
                     </tr>
