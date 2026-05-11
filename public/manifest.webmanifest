@@ -6,8 +6,8 @@
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#11100e",
-  "theme_color": "#11100e",
+  "background_color": "#030303",
+  "theme_color": "#030303",
   "categories": ["beauty", "business", "productivity"],
   "icons": [
     {

@@ -180,8 +180,8 @@ export default function Home() {
       <main className="page-shell">
         <header className="topbar">
           <a className="brand" href="#">
-            <span className="brand-mark">BT</span>
-            <span>Bruno Tooledoo Barber Studio</span>
+            <img alt="" className="brand-logo" src="/brand/bt-logo.svg" />
+            <span>BrunoTooledoo</span>
           </a>
           <a className="nav-link" href="/admin">
             Panel privado
@@ -190,8 +190,14 @@ export default function Home() {
 
         <section className="hero">
           <div className="hero-copy">
+            <img
+              alt="Bruno Tooledoo Barber Studio"
+              className="hero-logo"
+              src="/brand/bt-logo.svg"
+            />
             <div className="eyebrow">ES / GB · Gran Canaria / Firgas</div>
-            <h1>Bruno Tooledoo Barber Studio</h1>
+            <h1>BrunoTooledoo</h1>
+            <div className="studio-wordmark">Barber Studio</div>
             <p>
               Cortes, barba y estilo masculino con trato cercano y acabado profesional.
               Reserva tu cita online y elige el hueco que mejor encaje contigo.
@@ -201,7 +207,7 @@ export default function Home() {
               <span>@brunotooledoo</span>
             </div>
             <div className="profile-card">
-              <div className="profile-avatar">BT</div>
+              <img alt="" className="profile-avatar" src="/brand/bt-logo.svg" />
               <div>
                 <strong>Bruno Tooledoo Barber Studio</strong>
                 <span>40 publicaciones · 1271 seguidores · 918 seguidos</span>

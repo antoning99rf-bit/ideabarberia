@@ -1,12 +1,12 @@
 :root {
-  --bg: #090d11;
-  --panel: #111820;
-  --panel-soft: #18222c;
-  --text: #f5f7f8;
-  --muted: #a8b2bb;
-  --line: rgba(247, 241, 232, 0.14);
-  --accent: #d8a85f;
-  --accent-dark: #a97934;
+  --bg: #030303;
+  --panel: #080808;
+  --panel-soft: #111111;
+  --text: #f8f8f8;
+  --muted: #a7a7a7;
+  --line: rgba(248, 248, 248, 0.2);
+  --accent: #ffffff;
+  --accent-dark: #c8c8c8;
   --ok: #87c99f;
   --danger: #ef8f8f;
 }
@@ -23,7 +23,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: "Arial Black", "Arial Narrow", Arial, Helvetica, sans-serif;
 }
 
 a {
@@ -40,7 +40,7 @@ select {
 .page-shell {
   min-height: 100vh;
   background:
-    linear-gradient(90deg, rgba(9, 13, 17, 0.96), rgba(9, 13, 17, 0.7) 46%, rgba(9, 13, 17, 0.94)),
+    linear-gradient(90deg, rgba(3, 3, 3, 0.98), rgba(3, 3, 3, 0.68) 48%, rgba(3, 3, 3, 0.96)),
     url("https://images.unsplash.com/photo-1585747860715-2ba37e788b70?auto=format&fit=crop&w=1800&q=82") center/cover fixed;
 }
 
@@ -57,25 +57,26 @@ select {
   align-items: center;
   display: flex;
   gap: 12px;
-  letter-spacing: 0;
+  font-size: 0.95rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
-.brand-mark {
-  align-items: center;
-  background: var(--accent);
-  color: #17130f;
-  display: grid;
-  font-size: 0.78rem;
-  font-weight: 800;
-  height: 40px;
-  place-items: center;
-  width: 40px;
+.brand-logo {
+  border: 1px solid var(--line);
+  height: 42px;
+  object-fit: cover;
+  width: 58px;
 }
 
 .nav-link {
   border: 1px solid var(--line);
   color: var(--text);
+  font-size: 0.78rem;
+  letter-spacing: 0.1em;
   padding: 10px 14px;
+  text-transform: uppercase;
 }
 
 .hero {
@@ -93,18 +94,38 @@ select {
   max-width: 660px;
 }
 
+.hero-logo {
+  border: 1px solid var(--line);
+  display: block;
+  height: auto;
+  margin-bottom: 24px;
+  max-width: 360px;
+  width: min(100%, 360px);
+}
+
 .eyebrow {
   color: var(--accent);
   font-size: 0.88rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
 }
 
 h1 {
-  font-size: clamp(2.35rem, 6.8vw, 5.8rem);
+  font-size: clamp(2.7rem, 7.8vw, 6.4rem);
+  font-stretch: condensed;
+  letter-spacing: 0;
   line-height: 0.94;
-  margin: 18px 0;
+  margin: 18px 0 4px;
+  text-transform: none;
+}
+
+.studio-wordmark {
+  color: var(--text);
+  font-size: clamp(1rem, 2vw, 1.55rem);
+  letter-spacing: 0.46em;
+  margin-bottom: 22px;
+  text-transform: uppercase;
 }
 
 .hero-copy p {
@@ -124,9 +145,12 @@ h1 {
 }
 
 .profile-strip span {
-  background: rgba(245, 247, 248, 0.08);
+  background: rgba(248, 248, 248, 0.06);
   border: 1px solid var(--line);
+  font-size: 0.82rem;
+  letter-spacing: 0.08em;
   padding: 8px 10px;
+  text-transform: uppercase;
 }
 
 .profile-card {
@@ -140,14 +164,10 @@ h1 {
 }
 
 .profile-avatar {
-  align-items: center;
-  background: #f5f7f8;
-  color: #090d11;
-  display: grid;
+  border: 1px solid var(--line);
   flex: 0 0 auto;
-  font-weight: 900;
   height: 54px;
-  place-items: center;
+  object-fit: cover;
   width: 54px;
 }
 
@@ -185,7 +205,7 @@ h1 {
 
 .button-primary {
   background: var(--accent);
-  color: #16110c;
+  color: #030303;
   font-weight: 800;
 }
 
@@ -198,7 +218,7 @@ h1 {
 .booking-panel,
 .admin-panel {
   align-self: center;
-  background: rgba(26, 24, 21, 0.9);
+  background: rgba(8, 8, 8, 0.92);
   border: 1px solid var(--line);
   padding: 24px;
 }
@@ -232,7 +252,7 @@ h1 {
 
 .field input,
 .field select {
-  background: #100f0d;
+  background: #030303;
   border: 1px solid var(--line);
   color: var(--text);
   min-height: 46px;
@@ -243,7 +263,7 @@ h1 {
 .field input:focus,
 .field select:focus {
   border-color: var(--accent);
-  outline: 2px solid rgba(197, 155, 95, 0.22);
+  outline: 2px solid rgba(248, 248, 248, 0.18);
 }
 
 .field input:disabled,
@@ -268,7 +288,7 @@ h1 {
 }
 
 .segmented {
-  background: #100f0d;
+  background: #030303;
   border: 1px solid var(--line);
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -285,7 +305,7 @@ h1 {
 
 .segmented button.active {
   background: var(--accent);
-  color: #16110c;
+  color: #030303;
   font-weight: 800;
 }
 
@@ -300,8 +320,8 @@ h1 {
 
 .price-preview {
   align-items: center;
-  background: rgba(197, 155, 95, 0.12);
-  border: 1px solid rgba(197, 155, 95, 0.28);
+  background: rgba(248, 248, 248, 0.06);
+  border: 1px solid var(--line);
   display: flex;
   justify-content: space-between;
   min-height: 46px;
@@ -332,8 +352,8 @@ h1 {
 }
 
 .services-band {
-  background: #f4eee6;
-  color: #151311;
+  background: #f8f8f8;
+  color: #030303;
   padding: 54px 24px;
 }
 
@@ -378,7 +398,7 @@ h1 {
 }
 
 .admin-shell {
-  background: #11100e;
+  background: #030303;
   min-height: 100vh;
   padding: 28px 18px;
 }
@@ -428,7 +448,7 @@ h1 {
 }
 
 .schedule-row input[type="time"] {
-  background: #100f0d;
+  background: #030303;
   border: 1px solid var(--line);
   color: var(--text);
   min-height: 40px;
@@ -449,7 +469,7 @@ h1 {
 .admin-inline-form input,
 .admin-inline-form select,
 td input {
-  background: #100f0d;
+  background: #030303;
   border: 1px solid var(--line);
   color: var(--text);
   min-height: 40px;
