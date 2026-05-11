@@ -9,3 +9,5 @@ services.local.json
 blocked-slots.local.json
 working-hours.local.json
 *.log
+
+.vercel
