@@ -195,7 +195,7 @@ export default function Home() {
               className="hero-logo"
               src="/brand/bt-logo.svg"
             />
-            <div className="eyebrow">ES / GB · Gran Canaria / Firgas</div>
+            <div className="eyebrow">ES / GB - Gran Canaria / Firgas</div>
             <h1>BrunoTooledoo</h1>
             <div className="studio-wordmark">Barber Studio</div>
             <p>
@@ -210,7 +210,7 @@ export default function Home() {
               <img alt="" className="profile-avatar" src="/brand/bt-logo.svg" />
               <div>
                 <strong>Bruno Tooledoo Barber Studio</strong>
-                <span>40 publicaciones · 1271 seguidores · 918 seguidos</span>
+                <span>40 publicaciones - 1271 seguidores - 918 seguidos</span>
               </div>
             </div>
             <div className="hero-actions">

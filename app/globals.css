@@ -39,6 +39,7 @@ select {
 
 .page-shell {
   min-height: 100vh;
+  overflow-x: hidden;
   background:
     linear-gradient(90deg, rgba(3, 3, 3, 0.98), rgba(3, 3, 3, 0.68) 48%, rgba(3, 3, 3, 0.96)),
     url("https://images.unsplash.com/photo-1585747860715-2ba37e788b70?auto=format&fit=crop&w=1800&q=82") center/cover fixed;
@@ -60,13 +61,17 @@ select {
   font-size: 0.95rem;
   font-weight: 900;
   letter-spacing: 0.04em;
+  min-width: 0;
   text-transform: uppercase;
 }
 
 .brand-logo {
+  background: #030303;
   border: 1px solid var(--line);
   height: 42px;
-  object-fit: cover;
+  object-fit: contain;
+  padding: 4px;
+  flex: 0 0 auto;
   width: 58px;
 }
 
@@ -82,7 +87,7 @@ select {
 .hero {
   display: grid;
   gap: 40px;
-  grid-template-columns: 1fr 420px;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 420px);
   margin: 0 auto;
   max-width: 1120px;
   min-height: calc(100vh - 88px);
@@ -92,6 +97,7 @@ select {
 .hero-copy {
   align-self: center;
   max-width: 660px;
+  min-width: 0;
 }
 
 .hero-logo {
@@ -99,8 +105,8 @@ select {
   display: block;
   height: auto;
   margin-bottom: 24px;
-  max-width: 360px;
-  width: min(100%, 360px);
+  max-width: 300px;
+  width: min(100%, 300px);
 }
 
 .eyebrow {
@@ -112,19 +118,23 @@ select {
 }
 
 h1 {
-  font-size: clamp(2.7rem, 7.8vw, 6.4rem);
+  font-size: clamp(2.6rem, 5.2vw, 4.7rem);
   font-stretch: condensed;
   letter-spacing: 0;
   line-height: 0.94;
   margin: 18px 0 4px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   text-transform: none;
 }
 
 .studio-wordmark {
   color: var(--text);
-  font-size: clamp(1rem, 2vw, 1.55rem);
-  letter-spacing: 0.46em;
+  font-size: clamp(0.92rem, 1.45vw, 1.2rem);
+  letter-spacing: 0.4em;
   margin-bottom: 22px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   text-transform: uppercase;
 }
 
@@ -164,16 +174,23 @@ h1 {
 }
 
 .profile-avatar {
+  background: #030303;
   border: 1px solid var(--line);
   flex: 0 0 auto;
   height: 54px;
-  object-fit: cover;
+  object-fit: contain;
+  padding: 5px;
   width: 54px;
+}
+
+.profile-card div {
+  min-width: 0;
 }
 
 .profile-card strong,
 .profile-card span {
   display: block;
+  overflow-wrap: anywhere;
 }
 
 .profile-card span {
@@ -227,6 +244,7 @@ h1 {
   align-self: center;
   display: grid;
   gap: 16px;
+  min-width: 0;
 }
 
 .booking-panel h2,
@@ -556,10 +574,18 @@ td {
   padding: 6px 9px;
 }
 
-@media (max-width: 920px) {
+@media (max-width: 1040px) {
   .hero {
     grid-template-columns: 1fr;
     padding-top: 28px;
+  }
+
+  .hero-copy {
+    max-width: 100%;
+  }
+
+  .hero-logo {
+    max-width: 260px;
   }
 
   .booking-panel {
@@ -583,6 +609,19 @@ td {
   .hero {
     min-height: auto;
     padding: 28px 18px 56px;
+  }
+
+  .hero-logo {
+    max-width: 220px;
+  }
+
+  h1 {
+    font-size: clamp(2.1rem, 12vw, 3.4rem);
+  }
+
+  .studio-wordmark {
+    font-size: 0.82rem;
+    letter-spacing: 0.28em;
   }
 
   .booking-panel,
