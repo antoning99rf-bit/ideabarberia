@@ -535,7 +535,7 @@ export async function getAvailability(date: string) {
   const unavailable = new Set<string>();
 
   reservations
-    .filter((reservation) => reservation.date === date && reservation.status !== "Cancelada")
+    .filter((reservation) => reservation.date === date)
     .forEach((reservation) => unavailable.add(reservation.time));
   blockedSlots
     .filter((slot) => slot.date === date)
@@ -679,21 +679,16 @@ export async function listReservations(): Promise<Reservation[]> {
   return readLocalReservations();
 }
 
-export async function cancelReservation(id: string) {
+export async function deleteReservation(id: string) {
   await ensureSchema();
 
   if (hasMysqlConfig()) {
-    await getPool().execute("UPDATE reservations SET status = ? WHERE id = ?", [
-      "Cancelada",
-      id,
-    ]);
+    await getPool().execute("DELETE FROM reservations WHERE id = ?", [id]);
     return;
   }
 
   const reservations = await readLocalReservations();
-  memoryReservations = reservations.map((reservation) =>
-    reservation.id === id ? { ...reservation, status: "Cancelada" } : reservation,
-  );
+  memoryReservations = reservations.filter((reservation) => reservation.id !== id);
   await writeJson(localReservationsFile, memoryReservations);
 }
 

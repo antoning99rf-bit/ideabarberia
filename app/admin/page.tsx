@@ -208,24 +208,24 @@ export default function AdminPage() {
   }
 
   async function cancelBooking(id: string) {
-    setStatus("Cancelando cita...");
+    setStatus("Eliminando reserva...");
     setError("");
 
     const response = await fetch("/api/reservations", {
       method: "PATCH",
       headers: { ...headers, "Content-Type": "application/json" },
-      body: JSON.stringify({ id, status: "Cancelada" }),
+      body: JSON.stringify({ id, action: "delete" }),
     });
     const result = await response.json();
 
     if (!response.ok) {
-      setError(result.error || "No se pudo cancelar la cita.");
+      setError(result.error || "No se pudo eliminar la reserva.");
       setStatus("");
       return;
     }
 
     await loadReservations(savedPassword);
-    setStatus("Cita cancelada.");
+    setStatus("Reserva eliminada.");
   }
 
   useEffect(() => {
@@ -575,17 +575,13 @@ export default function AdminPage() {
                         <span className="pill">{reservation.status}</span>
                       </td>
                       <td>
-                        {reservation.status === "Cancelada" ? (
-                          <span className="status">Cancelada</span>
-                        ) : (
-                          <button
-                            className="button button-secondary"
-                            onClick={() => cancelBooking(reservation.id)}
-                            type="button"
-                          >
-                            Cancelar
-                          </button>
-                        )}
+                        <button
+                          className="button button-secondary"
+                          onClick={() => cancelBooking(reservation.id)}
+                          type="button"
+                        >
+                          Eliminar
+                        </button>
                       </td>
                     </tr>
                   ))}

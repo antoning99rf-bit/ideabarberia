@@ -5,7 +5,7 @@ import {
 } from "@/lib/reservations";
 import { verifySessionToken } from "@/lib/auth";
 import {
-  cancelReservation,
+  deleteReservation,
   listReservations,
   saveReservation,
   validateReservation,
@@ -97,10 +97,10 @@ export async function PATCH(request: NextRequest) {
   }
 
   const input = await request.json();
-  if (!input.id || input.status !== "Cancelada") {
+  if (!input.id || input.action !== "delete") {
     return NextResponse.json({ error: "Solicitud invalida." }, { status: 400 });
   }
 
-  await cancelReservation(input.id);
+  await deleteReservation(input.id);
   return NextResponse.json({ ok: true });
 }
