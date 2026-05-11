@@ -102,7 +102,7 @@ select {
 }
 
 h1 {
-  font-size: clamp(2.7rem, 8vw, 6.6rem);
+  font-size: clamp(2.35rem, 6.8vw, 5.8rem);
   line-height: 0.94;
   margin: 18px 0;
 }

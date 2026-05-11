@@ -3,13 +3,13 @@ import PwaRegister from "./pwa-register";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Bruno Toledo Barber | Reservas",
-  description: "Reserva tu cita con Bruno Toledo Barber en Gran Canaria / Firgas.",
+  title: "Bruno Tooledoo Barber Studio | Reservas",
+  description: "Reserva tu cita con Bruno Tooledoo Barber Studio en Gran Canaria / Firgas.",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Bruno Toledo",
+    title: "Bruno Tooledoo",
   },
   icons: {
     icon: "/icons/icon.svg",

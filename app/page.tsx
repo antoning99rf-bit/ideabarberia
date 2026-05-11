@@ -181,7 +181,7 @@ export default function Home() {
         <header className="topbar">
           <a className="brand" href="#">
             <span className="brand-mark">BT</span>
-            <span>Bruno Toledo Barber</span>
+            <span>Bruno Tooledoo Barber Studio</span>
           </a>
           <a className="nav-link" href="/admin">
             Panel privado
@@ -191,7 +191,7 @@ export default function Home() {
         <section className="hero">
           <div className="hero-copy">
             <div className="eyebrow">ES / GB · Gran Canaria / Firgas</div>
-            <h1>Bruno Toledo Barber</h1>
+            <h1>Bruno Tooledoo Barber Studio</h1>
             <p>
               Cortes, barba y estilo masculino con trato cercano y acabado profesional.
               Reserva tu cita online y elige el hueco que mejor encaje contigo.
@@ -203,7 +203,7 @@ export default function Home() {
             <div className="profile-card">
               <div className="profile-avatar">BT</div>
               <div>
-                <strong>Bruno Toledo Rodriguez</strong>
+                <strong>Bruno Tooledoo Barber Studio</strong>
                 <span>40 publicaciones · 1271 seguidores · 918 seguidos</span>
               </div>
             </div>
