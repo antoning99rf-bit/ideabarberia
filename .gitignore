@@ -1,0 +1,11 @@
+node_modules
+.next
+.tools
+.env
+.env*.local
+reservations.local.json
+users.local.json
+services.local.json
+blocked-slots.local.json
+working-hours.local.json
+*.log

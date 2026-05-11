@@ -1,0 +1,42 @@
+{
+  "name": "Barber Studio Reservas",
+  "short_name": "Barber Studio",
+  "description": "Reserva citas de peluqueria y barberia desde el movil.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#11100e",
+  "theme_color": "#11100e",
+  "categories": ["beauty", "business", "productivity"],
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Reservar cita",
+      "short_name": "Reservar",
+      "description": "Abrir el formulario de reserva",
+      "url": "/#reservar",
+      "icons": [{ "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+    },
+    {
+      "name": "Panel privado",
+      "short_name": "Panel",
+      "description": "Acceso del propietario",
+      "url": "/admin",
+      "icons": [{ "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+    }
+  ]
+}
