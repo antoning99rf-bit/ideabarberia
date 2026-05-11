@@ -72,7 +72,7 @@ export default function Home() {
       return;
     }
 
-    fetch(`/api/availability?date=${form.date}`)
+    fetch(`/api/availability?date=${form.date}&service=${encodeURIComponent(form.service)}`)
       .then((response) => response.json())
       .then((result) => {
         setAvailableTimes(result.available || []);
@@ -80,7 +80,7 @@ export default function Home() {
           setForm((currentForm) => ({ ...currentForm, time: "" }));
         }
       });
-  }, [form.date, form.time]);
+  }, [form.date, form.service, form.time]);
 
   function saveSession(nextUser: User, nextToken: string) {
     localStorage.setItem("bookingUser", JSON.stringify(nextUser));
@@ -341,13 +341,18 @@ export default function Home() {
                     {services.map((service) => (
                       <option key={service.name} value={service.name}>
                         {service.name} - {service.price ? `${service.price} EUR` : "A consultar"}
+                        {" · "}
+                        {service.durationMinutes} min
                       </option>
                     ))}
                   </select>
                 </div>
                 <div className="price-preview">
                   <span>Precio</span>
-                  <strong>{selectedService?.price ? `${selectedService.price} EUR` : "A consultar"}</strong>
+                  <strong>
+                    {selectedService?.price ? `${selectedService.price} EUR` : "A consultar"}
+                    {selectedService ? ` · ${selectedService.durationMinutes} min` : ""}
+                  </strong>
                 </div>
                 <div className="field">
                   <label htmlFor="date">Fecha</label>
@@ -404,7 +409,10 @@ export default function Home() {
               <div className="service-item" key={service.name}>
                 <strong>{service.name}</strong>
                 <span>{service.description}</span>
-                <em>{service.price ? `${service.price} EUR` : "A consultar"}</em>
+                <em>
+                  {service.price ? `${service.price} EUR` : "A consultar"} ·{" "}
+                  {service.durationMinutes} min
+                </em>
               </div>
             ))}
           </div>

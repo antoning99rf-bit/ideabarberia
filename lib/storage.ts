@@ -96,6 +96,7 @@ async function ensureSchema() {
       email VARCHAR(190) NOT NULL,
       service VARCHAR(80) NOT NULL,
       price DECIMAL(8,2) NOT NULL,
+      duration_minutes INT NOT NULL DEFAULT 30,
       date DATE NOT NULL,
       time VARCHAR(5) NOT NULL,
       status VARCHAR(40) NOT NULL,
@@ -109,12 +110,15 @@ async function ensureSchema() {
       id VARCHAR(36) PRIMARY KEY,
       name VARCHAR(120) NOT NULL,
       price DECIMAL(8,2) NOT NULL,
+      duration_minutes INT NOT NULL DEFAULT 30,
       description VARCHAR(255) NOT NULL,
       active TINYINT(1) NOT NULL DEFAULT 1,
       created_at DATETIME NOT NULL,
       updated_at DATETIME NOT NULL
     )
   `);
+  await db.query("ALTER TABLE services ADD COLUMN duration_minutes INT NOT NULL DEFAULT 30").catch(() => undefined);
+  await db.query("ALTER TABLE reservations ADD COLUMN duration_minutes INT NOT NULL DEFAULT 30").catch(() => undefined);
   await db.query(`
     CREATE TABLE IF NOT EXISTS blocked_slots (
       id VARCHAR(36) PRIMARY KEY,
@@ -145,12 +149,13 @@ async function ensureSchema() {
     await Promise.all(
       defaultServiceCatalog.map((service) =>
         db.execute(
-          `INSERT INTO services (id, name, price, description, active, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO services (id, name, price, duration_minutes, description, active, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             service.id,
             service.name,
             service.price,
+            service.durationMinutes,
             service.description,
             service.active ? 1 : 0,
             new Date(),
@@ -251,12 +256,12 @@ function toTime(minutes: number) {
   return `${String(hours).padStart(2, "0")}:${String(rest).padStart(2, "0")}`;
 }
 
-function slotsForRange(start: string, end: string) {
+function slotsForRange(start: string, end: string, durationMinutes = 30) {
   const slots: string[] = [];
   const startMinutes = toMinutes(start);
   const endMinutes = toMinutes(end);
 
-  for (let minutes = startMinutes; minutes < endMinutes; minutes += 30) {
+  for (let minutes = startMinutes; minutes + durationMinutes <= endMinutes; minutes += 30) {
     slots.push(toTime(minutes));
   }
 
@@ -350,7 +355,7 @@ export async function saveWorkingHours(days: WorkingDay[]) {
   return sanitized;
 }
 
-async function getSlotsForDate(date: string) {
+async function getSlotsForDate(date: string, durationMinutes = 30) {
   const parsedDate = new Date(`${date}T00:00:00`);
   const dayOfWeek = parsedDate.getDay();
   const day = (await getWorkingHours()).find((workingDay) => workingDay.dayOfWeek === dayOfWeek);
@@ -358,8 +363,8 @@ async function getSlotsForDate(date: string) {
   if (!day?.active) return [];
 
   return [
-    ...slotsForRange(day.morningStart, day.morningEnd),
-    ...slotsForRange(day.afternoonStart, day.afternoonEnd),
+    ...slotsForRange(day.morningStart, day.morningEnd, durationMinutes),
+    ...slotsForRange(day.afternoonStart, day.afternoonEnd, durationMinutes),
   ];
 }
 
@@ -368,7 +373,7 @@ export async function listServices(includeInactive = false): Promise<ServiceItem
 
   if (hasMysqlConfig()) {
     const [rows] = await getPool().execute<mysql.RowDataPacket[]>(
-      `SELECT id, name, price, description, active
+      `SELECT id, name, price, duration_minutes, description, active
        FROM services
        ${includeInactive ? "" : "WHERE active = 1"}
        ORDER BY name ASC`,
@@ -378,6 +383,7 @@ export async function listServices(includeInactive = false): Promise<ServiceItem
       id: row.id,
       name: row.name,
       price: Number(row.price),
+      durationMinutes: Number(row.duration_minutes || 30),
       description: row.description,
       active: Boolean(row.active),
     }));
@@ -387,10 +393,14 @@ export async function listServices(includeInactive = false): Promise<ServiceItem
   return includeInactive ? services : services.filter((service) => service.active);
 }
 
-export async function getServicePrice(serviceName: string) {
-  const service = (await listServices(true)).find(
+export async function getServiceByName(serviceName: string) {
+  return (await listServices(true)).find(
     (currentService) => currentService.name === serviceName && currentService.active,
   );
+}
+
+export async function getServicePrice(serviceName: string) {
+  const service = await getServiceByName(serviceName);
   return service?.price ?? 0;
 }
 
@@ -401,6 +411,7 @@ export async function upsertService(input: Partial<ServiceItem> & Pick<ServiceIt
     id: input.id || randomUUID(),
     name: input.name.trim(),
     price: Number(input.price || 0),
+    durationMinutes: Number(input.durationMinutes || 30),
     description: input.description?.trim() || "",
     active: input.active ?? true,
   };
@@ -409,15 +420,17 @@ export async function upsertService(input: Partial<ServiceItem> & Pick<ServiceIt
 
   if (hasMysqlConfig()) {
     await getPool().execute(
-      `INSERT INTO services (id, name, price, description, active, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO services (id, name, price, duration_minutes, description, active, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE
-       name = VALUES(name), price = VALUES(price), description = VALUES(description),
+       name = VALUES(name), price = VALUES(price), duration_minutes = VALUES(duration_minutes),
+       description = VALUES(description),
        active = VALUES(active), updated_at = VALUES(updated_at)`,
       [
         service.id,
         service.name,
         service.price,
+        service.durationMinutes,
         service.description,
         service.active ? 1 : 0,
         now,
@@ -524,8 +537,14 @@ export async function deleteBlockedSlot(id: string) {
   }
 }
 
-export async function getAvailability(date: string) {
-  const slots = date ? await getSlotsForDate(date) : getDefaultTimeSlots();
+function overlaps(startA: number, endA: number, startB: number, endB: number) {
+  return startA < endB && startB < endA;
+}
+
+export async function getAvailability(date: string, serviceName?: string) {
+  const service = serviceName ? await getServiceByName(serviceName) : null;
+  const durationMinutes = service?.durationMinutes || 30;
+  const slots = date ? await getSlotsForDate(date, durationMinutes) : getDefaultTimeSlots();
   if (!date) return { date, slots, unavailable: [], available: [] };
 
   const [reservations, blockedSlots] = await Promise.all([
@@ -534,12 +553,22 @@ export async function getAvailability(date: string) {
   ]);
   const unavailable = new Set<string>();
 
-  reservations
-    .filter((reservation) => reservation.date === date)
-    .forEach((reservation) => unavailable.add(reservation.time));
-  blockedSlots
-    .filter((slot) => slot.date === date)
-    .forEach((slot) => unavailable.add(slot.time));
+  for (const slot of slots) {
+    const start = toMinutes(slot);
+    const end = start + durationMinutes;
+    const hasReservationOverlap = reservations
+      .filter((reservation) => reservation.date === date)
+      .some((reservation) => {
+        const reservationStart = toMinutes(reservation.time);
+        const reservationEnd = reservationStart + (reservation.durationMinutes || 30);
+        return overlaps(start, end, reservationStart, reservationEnd);
+      });
+    const hasBlockedSlot = blockedSlots.some(
+      (blockedSlot) => blockedSlot.date === date && blockedSlot.time === slot,
+    );
+
+    if (hasReservationOverlap || hasBlockedSlot) unavailable.add(slot);
+  }
 
   return {
     date,
@@ -552,7 +581,7 @@ export async function getAvailability(date: string) {
 export async function validateReservation(input: ReservationInput) {
   const errors: string[] = [];
   const activeServices = await listServices(false);
-  const availability = await getAvailability(input.date);
+  const availability = await getAvailability(input.date, input.service);
 
   if (!activeServices.some((service) => service.name === input.service)) {
     errors.push("Servicio invalido.");
@@ -656,7 +685,7 @@ export async function listReservations(): Promise<Reservation[]> {
 
   if (hasMysqlConfig()) {
     const [rows] = await getPool().execute<mysql.RowDataPacket[]>(
-      `SELECT id, user_id, name, phone, email, service, price, date, time, status, created_at
+      `SELECT id, user_id, name, phone, email, service, price, duration_minutes, date, time, status, created_at
        FROM reservations
        ORDER BY created_at DESC`,
     );
@@ -669,6 +698,7 @@ export async function listReservations(): Promise<Reservation[]> {
       email: row.email,
       service: row.service,
       price: Number(row.price),
+      durationMinutes: Number(row.duration_minutes || 30),
       date: row.date instanceof Date ? row.date.toISOString().slice(0, 10) : String(row.date),
       time: row.time,
       status: row.status,
@@ -703,6 +733,7 @@ export async function saveReservation(input: ReservationInput, user: User): Prom
     phone: user.phone,
     email: user.email,
     price: await getServicePrice(input.service),
+    durationMinutes: (await getServiceByName(input.service))?.durationMinutes || 30,
     createdAt: new Date().toISOString(),
     status: "Reservada",
   };
@@ -710,8 +741,8 @@ export async function saveReservation(input: ReservationInput, user: User): Prom
   if (hasMysqlConfig()) {
     await getPool().execute(
       `INSERT INTO reservations
-       (id, user_id, name, phone, email, service, price, date, time, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, user_id, name, phone, email, service, price, duration_minutes, date, time, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         reservation.id,
         user.id,
@@ -720,6 +751,7 @@ export async function saveReservation(input: ReservationInput, user: User): Prom
         reservation.email,
         reservation.service,
         reservation.price,
+        reservation.durationMinutes,
         reservation.date,
         reservation.time,
         reservation.status,

@@ -6,12 +6,14 @@ import type { BlockedSlot, Reservation, ServiceItem, WorkingDay } from "@/lib/ty
 type NewService = {
   name: string;
   price: string;
+  durationMinutes: string;
   description: string;
 };
 
 const emptyService: NewService = {
   name: "",
   price: "",
+  durationMinutes: "30",
   description: "",
 };
 
@@ -116,6 +118,7 @@ export default function AdminPage() {
       id: "",
       name: newService.name,
       price: Number(newService.price || 0),
+      durationMinutes: Number(newService.durationMinutes || 30),
       description: newService.description,
       active: true,
     });
@@ -383,6 +386,16 @@ export default function AdminPage() {
                 value={newService.price}
               />
               <input
+                min="15"
+                onChange={(event) =>
+                  setNewService({ ...newService, durationMinutes: event.target.value })
+                }
+                placeholder="Minutos"
+                step="15"
+                type="number"
+                value={newService.durationMinutes}
+              />
+              <input
                 onChange={(event) =>
                   setNewService({ ...newService, description: event.target.value })
                 }
@@ -400,6 +413,7 @@ export default function AdminPage() {
                   <tr>
                     <th>Servicio</th>
                     <th>Precio</th>
+                    <th>Tiempo</th>
                     <th>Descripcion</th>
                     <th>Activo</th>
                     <th>Accion</th>
@@ -437,6 +451,26 @@ export default function AdminPage() {
                           step="0.01"
                           type="number"
                           value={service.price}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          min="15"
+                          onChange={(event) =>
+                            setServices((currentServices) =>
+                              currentServices.map((currentService) =>
+                                currentService.id === service.id
+                                  ? {
+                                      ...currentService,
+                                      durationMinutes: Number(event.target.value),
+                                    }
+                                  : currentService,
+                              ),
+                            )
+                          }
+                          step="15"
+                          type="number"
+                          value={service.durationMinutes}
                         />
                       </td>
                       <td>
@@ -557,6 +591,7 @@ export default function AdminPage() {
                     <th>Email</th>
                     <th>Servicio</th>
                     <th>Precio</th>
+                    <th>Tiempo</th>
                     <th>Estado</th>
                     <th>Accion</th>
                   </tr>
@@ -571,6 +606,7 @@ export default function AdminPage() {
                       <td>{reservation.email}</td>
                       <td>{reservation.service}</td>
                       <td>{reservation.price ? `${reservation.price} EUR` : "A consultar"}</td>
+                      <td>{reservation.durationMinutes} min</td>
                       <td>
                         <span className="pill">{reservation.status}</span>
                       </td>
@@ -587,7 +623,7 @@ export default function AdminPage() {
                   ))}
                   {!reservations.length ? (
                     <tr>
-                      <td colSpan={9}>Aun no hay reservas.</td>
+                      <td colSpan={10}>Aun no hay reservas.</td>
                     </tr>
                   ) : null}
                 </tbody>

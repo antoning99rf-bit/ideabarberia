@@ -17,6 +17,7 @@ function isAdmin(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   const date = request.nextUrl.searchParams.get("date");
+  const service = request.nextUrl.searchParams.get("service") || undefined;
   const admin = request.nextUrl.searchParams.get("admin") === "1";
 
   if (admin) {
@@ -26,7 +27,7 @@ export async function GET(request: NextRequest) {
 
     const [blockedSlots, availability, workingHours] = await Promise.all([
       listBlockedSlots(),
-      date ? getAvailability(date) : Promise.resolve(null),
+      date ? getAvailability(date, service) : Promise.resolve(null),
       getWorkingHours(),
     ]);
 
@@ -42,7 +43,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Falta fecha." }, { status: 400 });
   }
 
-  return NextResponse.json(await getAvailability(date));
+  return NextResponse.json(await getAvailability(date, service));
 }
 
 export async function POST(request: NextRequest) {

@@ -33,7 +33,7 @@ export async function createCalendarEvent(reservation: Reservation) {
 
   const calendar = google.calendar({ version: "v3", auth: getGoogleAuth() });
   const [hours, minutes] = reservation.time.split(":").map(Number);
-  const endDate = new Date(2000, 0, 1, hours, minutes + 45);
+  const endDate = new Date(2000, 0, 1, hours, minutes + (reservation.durationMinutes || 30));
   const endTime = `${String(endDate.getHours()).padStart(2, "0")}:${String(
     endDate.getMinutes(),
   ).padStart(2, "0")}:00`;

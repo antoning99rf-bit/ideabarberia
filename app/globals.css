@@ -442,7 +442,7 @@ h1 {
 .admin-inline-form {
   display: grid;
   gap: 10px;
-  grid-template-columns: minmax(150px, 1fr) 120px minmax(180px, 1.3fr) auto;
+  grid-template-columns: minmax(150px, 1fr) 110px 110px minmax(180px, 1.3fr) auto;
   margin-bottom: 16px;
 }
 

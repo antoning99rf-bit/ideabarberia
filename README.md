@@ -68,8 +68,9 @@ Desde el panel puedes:
 - Ver reservas.
 - Añadir, editar, activar o desactivar servicios.
 - Cambiar precios y descripciones.
+- Ajustar la duracion de cada servicio en minutos.
 - Bloquear horas concretas por fecha para que no aparezcan al cliente.
 - Configurar dias de trabajo y tramos horarios. Por defecto: lunes a viernes de 09:00 a 14:00 y de 16:00 a 19:00; sabado y domingo cerrados.
 - Cancelar citas ya reservadas.
 
-El cliente elige la fecha con selector calendario y la hora desde un desplegable de horas disponibles. Las horas ya reservadas o bloqueadas no se ofrecen y el backend tambien las rechaza si alguien intenta enviarlas manualmente.
+El cliente elige la fecha con selector calendario y la hora desde un desplegable de horas disponibles. Las horas ya reservadas o bloqueadas no se ofrecen y el backend tambien las rechaza si alguien intenta enviarlas manualmente. La disponibilidad respeta la duracion del servicio: si un servicio dura 60 minutos, bloquea una hora real en la agenda.

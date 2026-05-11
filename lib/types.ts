@@ -2,6 +2,7 @@ export type ServiceItem = {
   id: string;
   name: string;
   price: number;
+  durationMinutes: number;
   description: string;
   active: boolean;
 };
@@ -11,6 +12,7 @@ export const defaultServiceCatalog: ServiceItem[] = [
     id: "corte",
     name: "Corte",
     price: 18,
+    durationMinutes: 30,
     description: "Precision, estilo y acabado.",
     active: true,
   },
@@ -18,6 +20,7 @@ export const defaultServiceCatalog: ServiceItem[] = [
     id: "barba",
     name: "Barba",
     price: 12,
+    durationMinutes: 30,
     description: "Perfilado y cuidado clasico.",
     active: true,
   },
@@ -25,6 +28,7 @@ export const defaultServiceCatalog: ServiceItem[] = [
     id: "corte-barba",
     name: "Corte + barba",
     price: 26,
+    durationMinutes: 60,
     description: "La experiencia completa.",
     active: true,
   },
@@ -32,6 +36,7 @@ export const defaultServiceCatalog: ServiceItem[] = [
     id: "tinte",
     name: "Tinte",
     price: 35,
+    durationMinutes: 90,
     description: "Color con acabado natural.",
     active: true,
   },
@@ -39,6 +44,7 @@ export const defaultServiceCatalog: ServiceItem[] = [
     id: "peinado",
     name: "Peinado",
     price: 15,
+    durationMinutes: 30,
     description: "Listo para cualquier ocasion.",
     active: true,
   },
@@ -46,6 +52,7 @@ export const defaultServiceCatalog: ServiceItem[] = [
     id: "otro",
     name: "Otro",
     price: 0,
+    durationMinutes: 30,
     description: "Cuéntanos que necesitas.",
     active: true,
   },
@@ -67,6 +74,7 @@ export type Reservation = ReservationInput & {
   phone: string;
   email: string;
   price: number;
+  durationMinutes: number;
   status: string;
 };
 
