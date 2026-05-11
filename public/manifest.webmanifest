@@ -1,7 +1,7 @@
 {
-  "name": "Barber Studio Reservas",
-  "short_name": "Barber Studio",
-  "description": "Reserva citas de peluqueria y barberia desde el movil.",
+  "name": "Bruno Toledo Barber Reservas",
+  "short_name": "Bruno Toledo",
+  "description": "Reserva citas con Bruno Toledo Barber en Gran Canaria / Firgas.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

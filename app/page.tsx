@@ -180,8 +180,8 @@ export default function Home() {
       <main className="page-shell">
         <header className="topbar">
           <a className="brand" href="#">
-            <span className="brand-mark">B</span>
-            <span>Barber Studio</span>
+            <span className="brand-mark">BT</span>
+            <span>Bruno Toledo Barber</span>
           </a>
           <a className="nav-link" href="/admin">
             Panel privado
@@ -190,13 +190,23 @@ export default function Home() {
 
         <section className="hero">
           <div className="hero-copy">
-            <div className="eyebrow">Peluqueria & barberia</div>
-            <h1>Reserva tu corte sin llamadas.</h1>
+            <div className="eyebrow">ES / GB · Gran Canaria / Firgas</div>
+            <h1>Bruno Toledo Barber</h1>
             <p>
-              Registrate, elige servicio, fecha y hora. La cita queda guardada en MySQL,
-              se crea en calendario y se confirma por WhatsApp cuando las credenciales
-              estan activas.
+              Cortes, barba y estilo masculino con trato cercano y acabado profesional.
+              Reserva tu cita online y elige el hueco que mejor encaje contigo.
             </p>
+            <div className="profile-strip">
+              <span>Since 2017</span>
+              <span>@brunotooledoo</span>
+            </div>
+            <div className="profile-card">
+              <div className="profile-avatar">BT</div>
+              <div>
+                <strong>Bruno Toledo Rodriguez</strong>
+                <span>40 publicaciones · 1271 seguidores · 918 seguidos</span>
+              </div>
+            </div>
             <div className="hero-actions">
               <a className="button button-primary" href="#reservar">
                 Reservar cita

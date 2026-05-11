@@ -61,7 +61,7 @@ Para enviar confirmaciones reales necesitas WhatsApp Cloud API:
 
 ## Panel privado
 
-Visita `/admin` e introduce `ADMIN_PASSWORD`.
+Visita `/admin` e introduce `ADMIN_PASSWORD`. En el entorno actual esta configurada como `peluqueriabruno123`.
 
 Desde el panel puedes:
 
