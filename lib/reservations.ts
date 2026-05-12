@@ -4,6 +4,7 @@ import { Reservation } from "./types";
 function hasGoogleCalendarConfig() {
   return Boolean(
     process.env.GOOGLE_CLIENT_EMAIL &&
+      process.env.GOOGLE_CALENDAR_ID &&
       process.env.GOOGLE_PRIVATE_KEY,
   );
 }
@@ -16,10 +17,7 @@ function getGoogleAuth() {
   return new google.auth.JWT({
     email: process.env.GOOGLE_CLIENT_EMAIL,
     key: getPrivateKey(),
-    scopes: [
-      "https://www.googleapis.com/auth/spreadsheets",
-      "https://www.googleapis.com/auth/calendar",
-    ],
+    scopes: ["https://www.googleapis.com/auth/calendar.events"],
   });
 }
 
@@ -40,10 +38,18 @@ export async function createCalendarEvent(reservation: Reservation) {
   const timeZone = process.env.TIME_ZONE || "Atlantic/Canary";
 
   await calendar.events.insert({
-    calendarId: process.env.GOOGLE_CALENDAR_ID || "primary",
+    calendarId: process.env.GOOGLE_CALENDAR_ID,
     requestBody: {
       summary: `${reservation.service} - ${reservation.name}`,
-      description: `Cliente: ${reservation.name}\nTelefono: ${reservation.phone}\nEmail: ${reservation.email}\nPrecio: ${reservation.price} EUR\nReserva: ${reservation.id}`,
+      description: [
+        `Cliente: ${reservation.name}`,
+        `Telefono WhatsApp: ${reservation.phone}`,
+        `Email: ${reservation.email}`,
+        `Servicio: ${reservation.service}`,
+        `Precio: ${reservation.price ? `${reservation.price} EUR` : "A consultar"}`,
+        `Duracion: ${reservation.durationMinutes || 30} min`,
+        `Reserva: ${reservation.id}`,
+      ].join("\n"),
       start: {
         dateTime: `${reservation.date}T${reservation.time}:00`,
         timeZone,
