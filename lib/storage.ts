@@ -97,6 +97,7 @@ async function ensureSchema() {
       service VARCHAR(80) NOT NULL,
       price DECIMAL(8,2) NOT NULL,
       duration_minutes INT NOT NULL DEFAULT 30,
+      calendar_event_id VARCHAR(255) NULL,
       date DATE NOT NULL,
       time VARCHAR(5) NOT NULL,
       status VARCHAR(40) NOT NULL,
@@ -119,6 +120,7 @@ async function ensureSchema() {
   `);
   await db.query("ALTER TABLE services ADD COLUMN duration_minutes INT NOT NULL DEFAULT 30").catch(() => undefined);
   await db.query("ALTER TABLE reservations ADD COLUMN duration_minutes INT NOT NULL DEFAULT 30").catch(() => undefined);
+  await db.query("ALTER TABLE reservations ADD COLUMN calendar_event_id VARCHAR(255) NULL").catch(() => undefined);
   await db.query(`
     CREATE TABLE IF NOT EXISTS blocked_slots (
       id VARCHAR(36) PRIMARY KEY,
@@ -685,7 +687,7 @@ export async function listReservations(): Promise<Reservation[]> {
 
   if (hasMysqlConfig()) {
     const [rows] = await getPool().execute<mysql.RowDataPacket[]>(
-      `SELECT id, user_id, name, phone, email, service, price, duration_minutes, date, time, status, created_at
+      `SELECT id, user_id, name, phone, email, service, price, duration_minutes, calendar_event_id, date, time, status, created_at
        FROM reservations
        ORDER BY created_at DESC`,
     );
@@ -699,6 +701,7 @@ export async function listReservations(): Promise<Reservation[]> {
       service: row.service,
       price: Number(row.price),
       durationMinutes: Number(row.duration_minutes || 30),
+      calendarEventId: row.calendar_event_id || null,
       date: row.date instanceof Date ? row.date.toISOString().slice(0, 10) : String(row.date),
       time: row.time,
       status: row.status,
@@ -707,6 +710,41 @@ export async function listReservations(): Promise<Reservation[]> {
   }
 
   return readLocalReservations();
+}
+
+export async function getReservationById(id: string): Promise<Reservation | null> {
+  await ensureSchema();
+
+  if (hasMysqlConfig()) {
+    const [rows] = await getPool().execute<mysql.RowDataPacket[]>(
+      `SELECT id, user_id, name, phone, email, service, price, duration_minutes, calendar_event_id, date, time, status, created_at
+       FROM reservations
+       WHERE id = ?
+       LIMIT 1`,
+      [id],
+    );
+    const row = rows[0];
+    if (!row) return null;
+
+    return {
+      id: row.id,
+      userId: row.user_id,
+      name: row.name,
+      phone: row.phone,
+      email: row.email,
+      service: row.service,
+      price: Number(row.price),
+      durationMinutes: Number(row.duration_minutes || 30),
+      calendarEventId: row.calendar_event_id || null,
+      date: row.date instanceof Date ? row.date.toISOString().slice(0, 10) : String(row.date),
+      time: row.time,
+      status: row.status,
+      createdAt: new Date(row.created_at).toISOString(),
+    };
+  }
+
+  const reservations = await readLocalReservations();
+  return reservations.find((reservation) => reservation.id === id) || null;
 }
 
 export async function deleteReservation(id: string) {
@@ -722,6 +760,24 @@ export async function deleteReservation(id: string) {
   await writeJson(localReservationsFile, memoryReservations);
 }
 
+export async function updateReservationCalendarEventId(id: string, calendarEventId: string | null) {
+  await ensureSchema();
+
+  if (hasMysqlConfig()) {
+    await getPool().execute("UPDATE reservations SET calendar_event_id = ? WHERE id = ?", [
+      calendarEventId,
+      id,
+    ]);
+    return;
+  }
+
+  const reservations = await readLocalReservations();
+  memoryReservations = reservations.map((reservation) =>
+    reservation.id === id ? { ...reservation, calendarEventId } : reservation,
+  );
+  await writeJson(localReservationsFile, memoryReservations);
+}
+
 export async function saveReservation(input: ReservationInput, user: User): Promise<Reservation> {
   await ensureSchema();
 
@@ -734,6 +790,7 @@ export async function saveReservation(input: ReservationInput, user: User): Prom
     email: user.email,
     price: await getServicePrice(input.service),
     durationMinutes: (await getServiceByName(input.service))?.durationMinutes || 30,
+    calendarEventId: null,
     createdAt: new Date().toISOString(),
     status: "Reservada",
   };
@@ -741,8 +798,8 @@ export async function saveReservation(input: ReservationInput, user: User): Prom
   if (hasMysqlConfig()) {
     await getPool().execute(
       `INSERT INTO reservations
-       (id, user_id, name, phone, email, service, price, duration_minutes, date, time, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, user_id, name, phone, email, service, price, duration_minutes, calendar_event_id, date, time, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         reservation.id,
         user.id,
@@ -752,6 +809,7 @@ export async function saveReservation(input: ReservationInput, user: User): Prom
         reservation.service,
         reservation.price,
         reservation.durationMinutes,
+        reservation.calendarEventId ?? null,
         reservation.date,
         reservation.time,
         reservation.status,

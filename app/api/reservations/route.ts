@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   createCalendarEvent,
+  deleteCalendarEventForReservation,
   sendWhatsAppConfirmation,
 } from "@/lib/reservations";
 import { verifySessionToken } from "@/lib/auth";
 import {
   deleteReservation,
+  getReservationById,
   listReservations,
   saveReservation,
+  updateReservationCalendarEventId,
   validateReservation,
 } from "@/lib/storage";
 import type { IntegrationResult, ReservationInput } from "@/lib/types";
@@ -60,6 +63,10 @@ export async function POST(request: NextRequest) {
     try {
       const calendar = await createCalendarEvent(reservation);
       integrations.push({ name: "calendar", ...calendar });
+      if (calendar.eventId) {
+        reservation.calendarEventId = calendar.eventId;
+        await updateReservationCalendarEventId(reservation.id, calendar.eventId);
+      }
     } catch (error) {
       integrations.push({
         name: "calendar",
@@ -101,6 +108,27 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: "Solicitud invalida." }, { status: 400 });
   }
 
+  const reservation = await getReservationById(input.id);
+  if (!reservation) {
+    return NextResponse.json({ error: "Reserva no encontrada." }, { status: 404 });
+  }
+
+  const integrations: IntegrationResult[] = [];
+  try {
+    const calendar = await deleteCalendarEventForReservation(reservation);
+    integrations.push({ name: "calendar", ...calendar });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error
+            ? `No se pudo eliminar el evento de Google Calendar: ${error.message}`
+            : "No se pudo eliminar el evento de Google Calendar.",
+      },
+      { status: 500 },
+    );
+  }
+
   await deleteReservation(input.id);
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, integrations });
 }

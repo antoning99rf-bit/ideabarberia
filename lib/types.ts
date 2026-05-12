@@ -69,6 +69,7 @@ export type ReservationInput = {
 export type Reservation = ReservationInput & {
   id: string;
   userId?: string;
+  calendarEventId?: string | null;
   createdAt: string;
   name: string;
   phone: string;
@@ -174,4 +175,5 @@ export type IntegrationResult = {
   name: string;
   ok: boolean;
   detail: string;
+  eventId?: string | null;
 };

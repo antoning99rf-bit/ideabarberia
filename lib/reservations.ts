@@ -37,7 +37,7 @@ export async function createCalendarEvent(reservation: Reservation) {
   ).padStart(2, "0")}:00`;
   const timeZone = process.env.TIME_ZONE || "Atlantic/Canary";
 
-  await calendar.events.insert({
+  const response = await calendar.events.insert({
     calendarId: process.env.GOOGLE_CALENDAR_ID,
     requestBody: {
       summary: `${reservation.service} - ${reservation.name}`,
@@ -64,7 +64,79 @@ export async function createCalendarEvent(reservation: Reservation) {
   return {
     ok: true,
     detail: "Evento creado en Google Calendar.",
+    eventId: response.data.id || null,
   };
+}
+
+export async function deleteCalendarEvent(eventId?: string | null) {
+  if (!eventId) {
+    return {
+      ok: false,
+      detail: "La reserva no tiene evento asociado en Google Calendar.",
+    };
+  }
+
+  if (!hasGoogleCalendarConfig()) {
+    return {
+      ok: false,
+      detail: "Google no configurado; evento no eliminado.",
+    };
+  }
+
+  const calendar = google.calendar({ version: "v3", auth: getGoogleAuth() });
+
+  try {
+    await calendar.events.delete({
+      calendarId: process.env.GOOGLE_CALENDAR_ID,
+      eventId,
+    });
+  } catch (error) {
+    const status = typeof error === "object" && error !== null && "code" in error
+      ? Number((error as { code?: unknown }).code)
+      : undefined;
+
+    if (status !== 404 && status !== 410) {
+      throw error;
+    }
+  }
+
+  return {
+    ok: true,
+    detail: "Evento eliminado de Google Calendar.",
+  };
+}
+
+export async function deleteCalendarEventForReservation(reservation: Reservation) {
+  if (reservation.calendarEventId) {
+    return deleteCalendarEvent(reservation.calendarEventId);
+  }
+
+  if (!hasGoogleCalendarConfig()) {
+    return {
+      ok: false,
+      detail: "Google no configurado; evento no eliminado.",
+    };
+  }
+
+  const calendar = google.calendar({ version: "v3", auth: getGoogleAuth() });
+  const response = await calendar.events.list({
+    calendarId: process.env.GOOGLE_CALENDAR_ID,
+    maxResults: 10,
+    q: reservation.id,
+    singleEvents: true,
+  });
+  const event = response.data.items?.find((item) =>
+    item.description?.includes(reservation.id),
+  );
+
+  if (!event?.id) {
+    return {
+      ok: false,
+      detail: "No se encontro evento asociado en Google Calendar.",
+    };
+  }
+
+  return deleteCalendarEvent(event.id);
 }
 
 export async function sendWhatsAppConfirmation(reservation: Reservation) {
