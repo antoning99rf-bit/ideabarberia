@@ -1,7 +1,12 @@
 import { google } from "googleapis";
 import { Reservation } from "./types";
 
-function hasGoogleCalendarConfig() {
+export type BusyRange = {
+  start: number;
+  end: number;
+};
+
+export function hasGoogleCalendarConfig() {
   return Boolean(
     process.env.GOOGLE_CLIENT_EMAIL &&
       process.env.GOOGLE_CALENDAR_ID &&
@@ -25,6 +30,36 @@ function getGoogleErrorStatus(error: unknown) {
   return typeof error === "object" && error !== null && "code" in error
     ? Number((error as { code?: unknown }).code)
     : undefined;
+}
+
+function toMinutes(time: string) {
+  const [hours, minutes] = time.split(":").map(Number);
+  return hours * 60 + minutes;
+}
+
+function addDays(date: string, days: number) {
+  const current = new Date(`${date}T00:00:00.000Z`);
+  current.setUTCDate(current.getUTCDate() + days);
+  return current.toISOString().slice(0, 10);
+}
+
+function formatInTimeZone(value: string, timeZone: string) {
+  const date = new Date(value);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+  const get = (type: string) => parts.find((part) => part.type === type)?.value || "";
+
+  return {
+    date: `${get("year")}-${get("month")}-${get("day")}`,
+    time: `${get("hour")}:${get("minute")}`,
+  };
 }
 
 export async function createCalendarEvent(reservation: Reservation) {
@@ -105,6 +140,46 @@ export async function getCalendarEventSchedule(eventId?: string | null) {
     if (status === 404 || status === 410) return null;
     throw error;
   }
+}
+
+export async function listCalendarBusyRanges(date: string): Promise<BusyRange[]> {
+  if (!hasGoogleCalendarConfig()) return [];
+
+  const timeZone = process.env.TIME_ZONE || "Atlantic/Canary";
+  const calendar = google.calendar({ version: "v3", auth: getGoogleAuth() });
+  const response = await calendar.events.list({
+    calendarId: process.env.GOOGLE_CALENDAR_ID,
+    singleEvents: true,
+    showDeleted: false,
+    timeMin: `${addDays(date, -1)}T00:00:00.000Z`,
+    timeMax: `${addDays(date, 2)}T00:00:00.000Z`,
+  });
+
+  return (response.data.items || []).flatMap((event) => {
+    if (event.status === "cancelled") return [];
+
+    if (event.start?.date && event.end?.date) {
+      const startDate = event.start.date;
+      const endDate = event.end.date;
+      if (startDate <= date && date < endDate) return [{ start: 0, end: 24 * 60 }];
+      return [];
+    }
+
+    const startDateTime = event.start?.dateTime;
+    const endDateTime = event.end?.dateTime;
+    if (!startDateTime || !endDateTime) return [];
+
+    const start = formatInTimeZone(startDateTime, timeZone);
+    const end = formatInTimeZone(endDateTime, timeZone);
+    if (start.date !== date && end.date !== date) return [];
+
+    return [
+      {
+        start: start.date === date ? toMinutes(start.time) : 0,
+        end: end.date === date ? toMinutes(end.time) : 24 * 60,
+      },
+    ];
+  });
 }
 
 export async function deleteCalendarEvent(eventId?: string | null) {

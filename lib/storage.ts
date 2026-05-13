@@ -3,6 +3,7 @@ import path from "path";
 import { randomUUID } from "crypto";
 import mysql from "mysql2/promise";
 import { hashPassword, verifyPassword } from "./auth";
+import { BusyRange, hasGoogleCalendarConfig, listCalendarBusyRanges } from "./reservations";
 import {
   BlockedSlot,
   Reservation,
@@ -13,6 +14,8 @@ import {
   defaultWorkingHours,
   WorkingDay,
 } from "./types";
+
+const SLOT_INTERVAL_MINUTES = 15;
 
 type StoredUser = User & {
   passwordHash: string;
@@ -263,7 +266,11 @@ function slotsForRange(start: string, end: string, durationMinutes = 30) {
   const startMinutes = toMinutes(start);
   const endMinutes = toMinutes(end);
 
-  for (let minutes = startMinutes; minutes + durationMinutes <= endMinutes; minutes += 30) {
+  for (
+    let minutes = startMinutes;
+    minutes + durationMinutes <= endMinutes;
+    minutes += SLOT_INTERVAL_MINUTES
+  ) {
     slots.push(toTime(minutes));
   }
 
@@ -543,33 +550,76 @@ function overlaps(startA: number, endA: number, startB: number, endB: number) {
   return startA < endB && startB < endA;
 }
 
+function getCurrentCanaryDateTime() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: process.env.TIME_ZONE || "Atlantic/Canary",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date());
+  const get = (type: string) => parts.find((part) => part.type === type)?.value || "";
+
+  return {
+    date: `${get("year")}-${get("month")}-${get("day")}`,
+    minutes: toMinutes(`${get("hour")}:${get("minute")}`),
+  };
+}
+
+function isPastSlot(date: string, slot: string) {
+  const now = getCurrentCanaryDateTime();
+  if (date < now.date) return true;
+  return date === now.date && toMinutes(slot) < now.minutes;
+}
+
 export async function getAvailability(date: string, serviceName?: string) {
   const service = serviceName ? await getServiceByName(serviceName) : null;
   const durationMinutes = service?.durationMinutes || 30;
   const slots = date ? await getSlotsForDate(date, durationMinutes) : getDefaultTimeSlots();
   if (!date) return { date, slots, unavailable: [], available: [] };
 
-  const [reservations, blockedSlots] = await Promise.all([
+  const [reservations, blockedSlots, calendarBusyRanges] = await Promise.all([
     listReservations(),
     listBlockedSlots(),
+    listCalendarBusyRanges(date),
   ]);
   const unavailable = new Set<string>();
+  const busyRanges: BusyRange[] = [
+    ...reservations
+      .filter(
+        (reservation) =>
+          reservation.date === date &&
+          (!hasGoogleCalendarConfig() || !reservation.calendarEventId),
+      )
+      .map((reservation) => {
+        const start = toMinutes(reservation.time);
+        return {
+          start,
+          end: start + (reservation.durationMinutes || 30),
+        };
+      }),
+    ...blockedSlots
+      .filter((blockedSlot) => blockedSlot.date === date)
+      .map((blockedSlot) => {
+        const start = toMinutes(blockedSlot.time);
+        return {
+          start,
+          end: start + SLOT_INTERVAL_MINUTES,
+        };
+      }),
+    ...calendarBusyRanges,
+  ];
 
   for (const slot of slots) {
     const start = toMinutes(slot);
     const end = start + durationMinutes;
-    const hasReservationOverlap = reservations
-      .filter((reservation) => reservation.date === date)
-      .some((reservation) => {
-        const reservationStart = toMinutes(reservation.time);
-        const reservationEnd = reservationStart + (reservation.durationMinutes || 30);
-        return overlaps(start, end, reservationStart, reservationEnd);
-      });
-    const hasBlockedSlot = blockedSlots.some(
-      (blockedSlot) => blockedSlot.date === date && blockedSlot.time === slot,
+    const hasOverlap = busyRanges.some((busyRange) =>
+      overlaps(start, end, busyRange.start, busyRange.end),
     );
 
-    if (hasReservationOverlap || hasBlockedSlot) unavailable.add(slot);
+    if (isPastSlot(date, slot) || hasOverlap) unavailable.add(slot);
   }
 
   return {
@@ -591,7 +641,7 @@ export async function validateReservation(input: ReservationInput) {
   if (!input.date) errors.push("Fecha obligatoria.");
   if (!input.time) errors.push("Hora obligatoria.");
   if (input.date && input.time && !availability.available.includes(input.time)) {
-    errors.push("Esa hora no esta disponible.");
+    errors.push("Ese horario acaba de ocuparse. Por favor, elige otra hora.");
   }
 
   return errors;
