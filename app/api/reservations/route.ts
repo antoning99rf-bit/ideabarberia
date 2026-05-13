@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   createCalendarEvent,
   deleteCalendarEventForReservation,
+  getCalendarEventSchedule,
   sendWhatsAppConfirmation,
 } from "@/lib/reservations";
 import { verifySessionToken } from "@/lib/auth";
@@ -11,6 +12,7 @@ import {
   listReservations,
   saveReservation,
   updateReservationCalendarEventId,
+  updateReservationSchedule,
   validateReservation,
 } from "@/lib/storage";
 import type { IntegrationResult, ReservationInput } from "@/lib/types";
@@ -28,7 +30,32 @@ export async function GET(request: NextRequest) {
 
   try {
     const reservations = await listReservations();
-    return NextResponse.json({ reservations });
+    const updates = await Promise.all(
+      reservations
+        .filter((reservation) => reservation.calendarEventId)
+        .map(async (reservation) => {
+          try {
+            const schedule = await getCalendarEventSchedule(reservation.calendarEventId);
+            if (
+              !schedule ||
+              (schedule.date === reservation.date &&
+                schedule.time === reservation.time &&
+                schedule.durationMinutes === reservation.durationMinutes)
+            ) {
+              return false;
+            }
+
+            await updateReservationSchedule(reservation.id, schedule);
+            return true;
+          } catch {
+            return false;
+          }
+        }),
+    );
+
+    return NextResponse.json({
+      reservations: updates.some(Boolean) ? await listReservations() : reservations,
+    });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Error cargando reservas" },

@@ -778,6 +778,34 @@ export async function updateReservationCalendarEventId(id: string, calendarEvent
   await writeJson(localReservationsFile, memoryReservations);
 }
 
+export async function updateReservationSchedule(
+  id: string,
+  input: { date: string; time: string; durationMinutes: number },
+) {
+  await ensureSchema();
+
+  if (hasMysqlConfig()) {
+    await getPool().execute(
+      "UPDATE reservations SET date = ?, time = ?, duration_minutes = ? WHERE id = ?",
+      [input.date, input.time, input.durationMinutes, id],
+    );
+    return;
+  }
+
+  const reservations = await readLocalReservations();
+  memoryReservations = reservations.map((reservation) =>
+    reservation.id === id
+      ? {
+          ...reservation,
+          date: input.date,
+          time: input.time,
+          durationMinutes: input.durationMinutes,
+        }
+      : reservation,
+  );
+  await writeJson(localReservationsFile, memoryReservations);
+}
+
 export async function saveReservation(input: ReservationInput, user: User): Promise<Reservation> {
   await ensureSchema();
 

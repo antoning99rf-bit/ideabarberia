@@ -21,6 +21,12 @@ function getGoogleAuth() {
   });
 }
 
+function getGoogleErrorStatus(error: unknown) {
+  return typeof error === "object" && error !== null && "code" in error
+    ? Number((error as { code?: unknown }).code)
+    : undefined;
+}
+
 export async function createCalendarEvent(reservation: Reservation) {
   if (!hasGoogleCalendarConfig()) {
     return {
@@ -68,6 +74,39 @@ export async function createCalendarEvent(reservation: Reservation) {
   };
 }
 
+export async function getCalendarEventSchedule(eventId?: string | null) {
+  if (!eventId || !hasGoogleCalendarConfig()) return null;
+
+  const calendar = google.calendar({ version: "v3", auth: getGoogleAuth() });
+
+  try {
+    const response = await calendar.events.get({
+      calendarId: process.env.GOOGLE_CALENDAR_ID,
+      eventId,
+    });
+    const event = response.data;
+    const startDateTime = event.start?.dateTime;
+    const endDateTime = event.end?.dateTime;
+
+    if (!startDateTime || !endDateTime || event.status === "cancelled") {
+      return null;
+    }
+
+    return {
+      date: startDateTime.slice(0, 10),
+      time: startDateTime.slice(11, 16),
+      durationMinutes: Math.max(
+        5,
+        Math.round((Date.parse(endDateTime) - Date.parse(startDateTime)) / 60000),
+      ),
+    };
+  } catch (error) {
+    const status = getGoogleErrorStatus(error);
+    if (status === 404 || status === 410) return null;
+    throw error;
+  }
+}
+
 export async function deleteCalendarEvent(eventId?: string | null) {
   if (!eventId) {
     return {
@@ -91,9 +130,7 @@ export async function deleteCalendarEvent(eventId?: string | null) {
       eventId,
     });
   } catch (error) {
-    const status = typeof error === "object" && error !== null && "code" in error
-      ? Number((error as { code?: unknown }).code)
-      : undefined;
+    const status = getGoogleErrorStatus(error);
 
     if (status !== 404 && status !== 410) {
       throw error;
