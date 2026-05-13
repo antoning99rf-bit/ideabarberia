@@ -6,6 +6,12 @@ export type BusyRange = {
   end: number;
 };
 
+export type CalendarEventSchedule = {
+  date: string;
+  time: string;
+  durationMinutes: number;
+};
+
 export function hasGoogleCalendarConfig() {
   return Boolean(
     process.env.GOOGLE_CLIENT_EMAIL &&
@@ -109,8 +115,13 @@ export async function createCalendarEvent(reservation: Reservation) {
   };
 }
 
-export async function getCalendarEventSchedule(eventId?: string | null) {
-  if (!eventId || !hasGoogleCalendarConfig()) return null;
+export async function getCalendarEventSync(eventId?: string | null): Promise<
+  | { exists: false; schedule: null }
+  | { exists: true; schedule: CalendarEventSchedule | null }
+> {
+  if (!eventId || !hasGoogleCalendarConfig()) {
+    return { exists: true, schedule: null };
+  }
 
   const calendar = google.calendar({ version: "v3", auth: getGoogleAuth() });
 
@@ -123,21 +134,28 @@ export async function getCalendarEventSchedule(eventId?: string | null) {
     const startDateTime = event.start?.dateTime;
     const endDateTime = event.end?.dateTime;
 
-    if (!startDateTime || !endDateTime || event.status === "cancelled") {
-      return null;
+    if (event.status === "cancelled") {
+      return { exists: false, schedule: null };
+    }
+
+    if (!startDateTime || !endDateTime) {
+      return { exists: true, schedule: null };
     }
 
     return {
-      date: startDateTime.slice(0, 10),
-      time: startDateTime.slice(11, 16),
-      durationMinutes: Math.max(
-        5,
-        Math.round((Date.parse(endDateTime) - Date.parse(startDateTime)) / 60000),
-      ),
+      exists: true,
+      schedule: {
+        date: startDateTime.slice(0, 10),
+        time: startDateTime.slice(11, 16),
+        durationMinutes: Math.max(
+          5,
+          Math.round((Date.parse(endDateTime) - Date.parse(startDateTime)) / 60000),
+        ),
+      },
     };
   } catch (error) {
     const status = getGoogleErrorStatus(error);
-    if (status === 404 || status === 410) return null;
+    if (status === 404 || status === 410) return { exists: false, schedule: null };
     throw error;
   }
 }

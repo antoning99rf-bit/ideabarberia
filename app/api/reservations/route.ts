@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   createCalendarEvent,
   deleteCalendarEventForReservation,
-  getCalendarEventSchedule,
+  getCalendarEventSync,
   sendWhatsAppConfirmation,
 } from "@/lib/reservations";
 import { verifySessionToken } from "@/lib/auth";
@@ -35,7 +35,13 @@ export async function GET(request: NextRequest) {
         .filter((reservation) => reservation.calendarEventId)
         .map(async (reservation) => {
           try {
-            const schedule = await getCalendarEventSchedule(reservation.calendarEventId);
+            const sync = await getCalendarEventSync(reservation.calendarEventId);
+            if (!sync.exists) {
+              await deleteReservation(reservation.id);
+              return true;
+            }
+
+            const schedule = sync.schedule;
             if (
               !schedule ||
               (schedule.date === reservation.date &&
