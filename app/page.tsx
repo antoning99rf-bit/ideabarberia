@@ -183,9 +183,6 @@ export default function Home() {
             <img alt="" className="brand-logo" src="/brand/bt-logo.svg" />
             <span>BrunoTooledoo</span>
           </a>
-          <a className="nav-link" href="/admin">
-            Panel privado
-          </a>
         </header>
 
         <section className="hero">
