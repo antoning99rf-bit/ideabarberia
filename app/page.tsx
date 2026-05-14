@@ -42,6 +42,7 @@ export default function Home() {
   const [authStatus, setAuthStatus] = useState({ type: "", message: "" });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
+  const [isRecoveringPassword, setIsRecoveringPassword] = useState(false);
   const [cancelingReservationId, setCancelingReservationId] = useState("");
   const [isLoadingReservations, setIsLoadingReservations] = useState(false);
 
@@ -201,6 +202,41 @@ export default function Home() {
       });
     } finally {
       setIsAuthSubmitting(false);
+    }
+  }
+
+  async function recoverPassword() {
+    if (!authForm.email) {
+      setAuthStatus({ type: "error", message: "Escribe tu email para recuperar la contrasena." });
+      return;
+    }
+
+    setIsRecoveringPassword(true);
+    setAuthStatus({ type: "", message: "Enviando enlace de recuperacion..." });
+
+    try {
+      const response = await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: authForm.email }),
+      });
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        setAuthStatus({ type: "error", message: result.error || "No se pudo enviar el enlace." });
+        return;
+      }
+
+      setAuthStatus({
+        type: "ok",
+        message:
+          result.message ||
+          "Si existe una cuenta con ese email, recibiras un enlace para cambiar la contrasena.",
+      });
+    } catch {
+      setAuthStatus({ type: "error", message: "No se pudo conectar con el servidor." });
+    } finally {
+      setIsRecoveringPassword(false);
     }
   }
 
@@ -393,6 +429,16 @@ export default function Home() {
                         ? "Crear cuenta"
                         : "Entrar"}
                   </button>
+                  {authMode === "login" ? (
+                    <button
+                      className="text-button auth-link"
+                      disabled={isRecoveringPassword}
+                      onClick={recoverPassword}
+                      type="button"
+                    >
+                      {isRecoveringPassword ? "Enviando..." : "He olvidado mi contrasena"}
+                    </button>
+                  ) : null}
                   <div className={`status ${authStatus.type}`} role="status">
                     {authStatus.message}
                   </div>

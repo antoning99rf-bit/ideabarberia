@@ -314,6 +314,10 @@ h1 {
   opacity: 0.55;
 }
 
+.auth-link {
+  justify-self: start;
+}
+
 .segmented {
   background: #030303;
   border: 1px solid var(--line);

@@ -1,6 +1,6 @@
 import { promises as fs } from "fs";
 import path from "path";
-import { randomUUID } from "crypto";
+import { createHash, randomBytes, randomUUID } from "crypto";
 import mysql from "mysql2/promise";
 import { hashPassword, verifyPassword } from "./auth";
 import { BusyRange, hasGoogleCalendarConfig, listCalendarBusyRanges } from "./reservations";
@@ -41,6 +41,10 @@ const localWorkingHoursFile = path.join(
   process.env.VERCEL ? "/tmp" : process.cwd(),
   "working-hours.local.json",
 );
+const localPasswordResetTokensFile = path.join(
+  process.env.VERCEL ? "/tmp" : process.cwd(),
+  "password-reset-tokens.local.json",
+);
 
 let pool: mysql.Pool | null = null;
 let schemaReady = false;
@@ -49,6 +53,16 @@ let memoryReservations: Reservation[] = [];
 let memoryServices: ServiceItem[] = defaultServiceCatalog;
 let memoryBlockedSlots: BlockedSlot[] = [];
 let memoryWorkingHours: WorkingDay[] = defaultWorkingHours;
+let memoryPasswordResetTokens: PasswordResetToken[] = [];
+
+type PasswordResetToken = {
+  id: string;
+  userId: string;
+  tokenHash: string;
+  expiresAt: string;
+  usedAt?: string | null;
+  createdAt: string;
+};
 
 export function hasMysqlConfig() {
   return Boolean(
@@ -146,6 +160,19 @@ async function ensureSchema() {
       updated_at DATETIME NOT NULL
     )
   `);
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+      id VARCHAR(36) PRIMARY KEY,
+      user_id VARCHAR(36) NOT NULL,
+      token_hash VARCHAR(64) NOT NULL UNIQUE,
+      expires_at DATETIME NOT NULL,
+      used_at DATETIME NULL,
+      created_at DATETIME NOT NULL,
+      INDEX password_reset_user_id_idx (user_id),
+      INDEX password_reset_token_hash_idx (token_hash),
+      CONSTRAINT password_reset_user_id_fk FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+  `);
 
   const [serviceRows] = await db.execute<mysql.RowDataPacket[]>(
     "SELECT COUNT(*) AS total FROM services",
@@ -238,6 +265,18 @@ async function readLocalBlockedSlots() {
 async function readLocalWorkingHours() {
   memoryWorkingHours = await readJson(localWorkingHoursFile, memoryWorkingHours);
   return memoryWorkingHours;
+}
+
+async function readLocalPasswordResetTokens() {
+  memoryPasswordResetTokens = await readJson(
+    localPasswordResetTokensFile,
+    memoryPasswordResetTokens,
+  );
+  return memoryPasswordResetTokens;
+}
+
+function hashResetToken(token: string) {
+  return createHash("sha256").update(token).digest("hex");
 }
 
 function publicUser(user: StoredUser): User {
@@ -730,6 +769,132 @@ export async function findUserByCredentials(email: string, password: string) {
   if (!user || !verifyPassword(password, user.passwordHash)) return null;
 
   return publicUser(user);
+}
+
+export async function findUserByEmail(email: string) {
+  await ensureSchema();
+  const normalizedEmail = email.trim().toLowerCase();
+
+  if (hasMysqlConfig()) {
+    const [rows] = await getPool().execute<mysql.RowDataPacket[]>(
+      `SELECT id, name, phone, email, created_at
+       FROM users
+       WHERE email = ?
+       LIMIT 1`,
+      [normalizedEmail],
+    );
+    const row = rows[0];
+    if (!row) return null;
+
+    return {
+      id: row.id,
+      name: row.name,
+      phone: row.phone,
+      email: row.email,
+      createdAt: new Date(row.created_at).toISOString(),
+    } satisfies User;
+  }
+
+  const users = await readLocalUsers();
+  const user = users.find((currentUser) => currentUser.email === normalizedEmail);
+  return user ? publicUser(user) : null;
+}
+
+export async function createPasswordResetToken(email: string) {
+  await ensureSchema();
+  const user = await findUserByEmail(email);
+  if (!user) return null;
+
+  const token = randomBytes(32).toString("base64url");
+  const tokenHash = hashResetToken(token);
+  const resetToken: PasswordResetToken = {
+    id: randomUUID(),
+    userId: user.id,
+    tokenHash,
+    expiresAt: new Date(Date.now() + 1000 * 60 * 60).toISOString(),
+    usedAt: null,
+    createdAt: new Date().toISOString(),
+  };
+
+  if (hasMysqlConfig()) {
+    await getPool().execute("DELETE FROM password_reset_tokens WHERE user_id = ? OR expires_at < ?", [
+      user.id,
+      new Date(),
+    ]);
+    await getPool().execute(
+      `INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at, used_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        resetToken.id,
+        resetToken.userId,
+        resetToken.tokenHash,
+        new Date(resetToken.expiresAt),
+        null,
+        new Date(resetToken.createdAt),
+      ],
+    );
+  } else {
+    const tokens = (await readLocalPasswordResetTokens()).filter(
+      (currentToken) =>
+        currentToken.userId !== user.id && new Date(currentToken.expiresAt).getTime() > Date.now(),
+    );
+    tokens.push(resetToken);
+    memoryPasswordResetTokens = tokens;
+    await writeJson(localPasswordResetTokensFile, tokens);
+  }
+
+  return { user, token };
+}
+
+export async function resetPasswordWithToken(token: string, password: string) {
+  await ensureSchema();
+  if (!token || password.length < 6) return false;
+
+  const tokenHash = hashResetToken(token);
+
+  if (hasMysqlConfig()) {
+    const [rows] = await getPool().execute<mysql.RowDataPacket[]>(
+      `SELECT id, user_id, expires_at, used_at
+       FROM password_reset_tokens
+       WHERE token_hash = ?
+       LIMIT 1`,
+      [tokenHash],
+    );
+    const row = rows[0];
+    if (!row || row.used_at || new Date(row.expires_at).getTime() < Date.now()) return false;
+
+    await getPool().execute("UPDATE users SET password_hash = ? WHERE id = ?", [
+      hashPassword(password),
+      row.user_id,
+    ]);
+    await getPool().execute("UPDATE password_reset_tokens SET used_at = ? WHERE id = ?", [
+      new Date(),
+      row.id,
+    ]);
+    return true;
+  }
+
+  const tokens = await readLocalPasswordResetTokens();
+  const resetToken = tokens.find((currentToken) => currentToken.tokenHash === tokenHash);
+  if (!resetToken || resetToken.usedAt || new Date(resetToken.expiresAt).getTime() < Date.now()) {
+    return false;
+  }
+
+  const users = await readLocalUsers();
+  const nextUsers = users.map((user) =>
+    user.id === resetToken.userId ? { ...user, passwordHash: hashPassword(password) } : user,
+  );
+  const nextTokens = tokens.map((currentToken) =>
+    currentToken.id === resetToken.id
+      ? { ...currentToken, usedAt: new Date().toISOString() }
+      : currentToken,
+  );
+
+  memoryUsers = nextUsers;
+  memoryPasswordResetTokens = nextTokens;
+  await writeJson(localUsersFile, nextUsers);
+  await writeJson(localPasswordResetTokensFile, nextTokens);
+  return true;
 }
 
 export async function listReservations(): Promise<Reservation[]> {

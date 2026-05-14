@@ -1,4 +1,4 @@
-const CACHE_NAME = "barber-studio-v2";
+const CACHE_NAME = "barber-studio-v3";
 const APP_SHELL = ["/", "/admin", "/manifest.webmanifest", "/icons/icon.svg", "/icons/maskable.svg"];
 
 self.addEventListener("install", (event) => {
