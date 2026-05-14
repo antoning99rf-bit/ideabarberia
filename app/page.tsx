@@ -289,7 +289,7 @@ export default function Home() {
       <main className="page-shell">
         <header className="topbar">
           <a className="brand" href="#">
-            <img alt="" className="brand-logo" src="/brand/bt-logo.png" />
+            <img alt="" className="brand-logo" src="/brand/bt-logo.jpeg" />
             <span>BrunoTooledoo</span>
           </a>
         </header>
@@ -299,7 +299,7 @@ export default function Home() {
             <img
               alt="Bruno Tooledoo Barber Studio"
               className="hero-logo"
-              src="/brand/bt-logo.png"
+              src="/brand/bt-logo.jpeg"
             />
             <div className="eyebrow">ES / GB - Gran Canaria / Firgas</div>
             <h1>BrunoTooledoo</h1>
@@ -313,7 +313,7 @@ export default function Home() {
               <span>@brunotooledoo</span>
             </div>
             <div className="profile-card">
-              <img alt="" className="profile-avatar" src="/brand/bt-logo.png" />
+              <img alt="" className="profile-avatar" src="/brand/bt-logo.jpeg" />
               <div>
                 <strong>Bruno Tooledoo Barber Studio</strong>
                 <span>40 publicaciones - 1271 seguidores - 918 seguidos</span>
