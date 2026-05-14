@@ -1,5 +1,12 @@
-const CACHE_NAME = "barber-studio-v6";
-const APP_SHELL = ["/", "/admin", "/manifest.webmanifest", "/icons/icon.svg", "/icons/maskable.svg"];
+const CACHE_NAME = "barber-studio-v7";
+const APP_SHELL = [
+  "/",
+  "/admin",
+  "/manifest.webmanifest",
+  "/brand/bt-logo.png",
+  "/icons/icon.svg",
+  "/icons/maskable.svg",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
