@@ -68,11 +68,11 @@ select {
 .brand-logo {
   background: #030303;
   border: 1px solid var(--line);
-  height: 42px;
+  height: 38px;
   object-fit: contain;
-  padding: 4px;
+  padding: 3px 5px;
   flex: 0 0 auto;
-  width: 58px;
+  width: 66px;
 }
 
 .nav-link {
@@ -105,8 +105,8 @@ select {
   display: block;
   height: auto;
   margin-bottom: 24px;
-  max-width: 300px;
-  width: min(100%, 300px);
+  max-width: 370px;
+  width: min(100%, 370px);
 }
 
 .eyebrow {
@@ -177,10 +177,10 @@ h1 {
   background: #030303;
   border: 1px solid var(--line);
   flex: 0 0 auto;
-  height: 54px;
+  height: 42px;
   object-fit: contain;
-  padding: 5px;
-  width: 54px;
+  padding: 4px 6px;
+  width: 72px;
 }
 
 .profile-card div {
@@ -630,7 +630,7 @@ td {
   }
 
   .hero-logo {
-    max-width: 260px;
+    max-width: 330px;
   }
 
   .booking-panel {
@@ -657,7 +657,7 @@ td {
   }
 
   .hero-logo {
-    max-width: 220px;
+    max-width: min(100%, 280px);
   }
 
   h1 {
