@@ -43,6 +43,7 @@ export default function Home() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
   const [cancelingReservationId, setCancelingReservationId] = useState("");
+  const [isLoadingReservations, setIsLoadingReservations] = useState(false);
 
   const selectedService = services.find((service) => service.name === form.service);
 
@@ -50,6 +51,7 @@ export default function Home() {
     async (nextToken = token) => {
       if (!nextToken) return;
 
+      setIsLoadingReservations(true);
       try {
         const response = await fetch("/api/reservations", {
           headers: {
@@ -63,6 +65,8 @@ export default function Home() {
         }
       } catch {
         setMyReservations([]);
+      } finally {
+        setIsLoadingReservations(false);
       }
     },
     [token],
@@ -301,44 +305,11 @@ export default function Home() {
               </div>
 
               {user ? (
-                <>
-                  <div className="account-summary">
-                    <strong>{user.name}</strong>
-                    <span>{user.phone}</span>
-                    <span>{user.email}</span>
-                  </div>
-                  <div className="client-reservations">
-                    <h3>Mis citas</h3>
-                    {myReservations.length ? (
-                      myReservations.map((reservation) => (
-                        <div className="client-reservation" key={reservation.id}>
-                          <div>
-                            <strong>{reservation.service}</strong>
-                            <span>
-                              {reservation.date} a las {reservation.time} -{" "}
-                              {reservation.durationMinutes} min
-                            </span>
-                            <span>
-                              {reservation.price ? `${reservation.price} EUR` : "A consultar"}
-                            </span>
-                          </div>
-                          <button
-                            className="text-button danger"
-                            disabled={cancelingReservationId === reservation.id}
-                            onClick={() => cancelMyReservation(reservation.id)}
-                            type="button"
-                          >
-                            {cancelingReservationId === reservation.id
-                              ? "Cancelando..."
-                              : "Cancelar"}
-                          </button>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="status">No tienes citas reservadas.</div>
-                    )}
-                  </div>
-                </>
+                <div className="account-summary">
+                  <strong>{user.name}</strong>
+                  <span>{user.phone}</span>
+                  <span>{user.email}</span>
+                </div>
               ) : (
                 <form className="form-grid" onSubmit={submitAuth}>
                   <div className="segmented">
@@ -428,6 +399,47 @@ export default function Home() {
                 </form>
               )}
             </section>
+
+            {user ? (
+              <section className="booking-panel client-reservations-panel">
+                <div className="panel-title-row">
+                  <h2>Mis citas</h2>
+                  <button className="text-button" onClick={() => loadMyReservations()} type="button">
+                    Actualizar
+                  </button>
+                </div>
+                <div className="client-reservations">
+                  {isLoadingReservations ? (
+                    <div className="status">Cargando citas...</div>
+                  ) : myReservations.length ? (
+                    myReservations.map((reservation) => (
+                      <div className="client-reservation" key={reservation.id}>
+                        <div>
+                          <strong>{reservation.service}</strong>
+                          <span>
+                            {reservation.date} a las {reservation.time} -{" "}
+                            {reservation.durationMinutes} min
+                          </span>
+                          <span>
+                            {reservation.price ? `${reservation.price} EUR` : "A consultar"}
+                          </span>
+                        </div>
+                        <button
+                          className="text-button danger"
+                          disabled={cancelingReservationId === reservation.id}
+                          onClick={() => cancelMyReservation(reservation.id)}
+                          type="button"
+                        >
+                          {cancelingReservationId === reservation.id ? "Cancelando..." : "Cancelar"}
+                        </button>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="status">No tienes citas reservadas.</div>
+                  )}
+                </div>
+              </section>
+            ) : null}
 
             <form className="booking-panel" onSubmit={submitReservation}>
               <h2>Reserva cita</h2>

@@ -346,16 +346,13 @@ h1 {
 }
 
 .client-reservations {
-  border-top: 1px solid var(--line);
   display: grid;
   gap: 10px;
-  margin-top: 16px;
-  padding-top: 16px;
+  margin-top: 14px;
 }
 
-.client-reservations h3 {
-  font-size: 1rem;
-  margin: 0;
+.client-reservations-panel h2 {
+  margin-bottom: 0;
 }
 
 .client-reservation {
