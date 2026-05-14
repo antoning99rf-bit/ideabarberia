@@ -66,13 +66,14 @@ select {
 }
 
 .brand-logo {
+  aspect-ratio: 1210 / 768;
   background: #030303;
   border: 1px solid var(--line);
-  height: 38px;
+  height: auto;
   object-fit: contain;
   padding: 3px 5px;
   flex: 0 0 auto;
-  width: 66px;
+  width: 70px;
 }
 
 .nav-link {
@@ -101,6 +102,7 @@ select {
 }
 
 .hero-logo {
+  aspect-ratio: 1210 / 768;
   border: 1px solid var(--line);
   display: block;
   height: auto;
@@ -174,10 +176,11 @@ h1 {
 }
 
 .profile-avatar {
+  aspect-ratio: 1210 / 768;
   background: #030303;
   border: 1px solid var(--line);
   flex: 0 0 auto;
-  height: 42px;
+  height: auto;
   object-fit: contain;
   padding: 4px 6px;
   width: 72px;
