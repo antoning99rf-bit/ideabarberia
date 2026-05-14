@@ -305,6 +305,15 @@ h1 {
   padding: 0;
 }
 
+.text-button.danger {
+  color: var(--danger);
+}
+
+.text-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .segmented {
   background: #030303;
   border: 1px solid var(--line);
@@ -334,6 +343,41 @@ h1 {
 
 .account-summary span {
   color: var(--muted);
+}
+
+.client-reservations {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 16px;
+}
+
+.client-reservations h3 {
+  font-size: 1rem;
+  margin: 0;
+}
+
+.client-reservation {
+  align-items: start;
+  background: rgba(248, 248, 248, 0.05);
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 1fr auto;
+  padding: 12px;
+}
+
+.client-reservation div,
+.client-reservation span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.client-reservation span {
+  color: var(--muted);
+  font-size: 0.88rem;
 }
 
 .price-preview {
@@ -627,6 +671,10 @@ td {
   .booking-panel,
   .admin-panel {
     padding: 18px;
+  }
+
+  .client-reservation {
+    grid-template-columns: 1fr;
   }
 
   .service-grid {

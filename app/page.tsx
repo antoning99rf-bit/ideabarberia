@@ -1,7 +1,7 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
-import type { ServiceItem, User } from "@/lib/types";
+import { FormEvent, useCallback, useEffect, useState } from "react";
+import type { Reservation, ServiceItem, User } from "@/lib/types";
 
 type FormState = {
   service: string;
@@ -37,12 +37,36 @@ export default function Home() {
   const [authMode, setAuthMode] = useState<"register" | "login">("register");
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState("");
+  const [myReservations, setMyReservations] = useState<Reservation[]>([]);
   const [status, setStatus] = useState({ type: "", message: "" });
   const [authStatus, setAuthStatus] = useState({ type: "", message: "" });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
+  const [cancelingReservationId, setCancelingReservationId] = useState("");
 
   const selectedService = services.find((service) => service.name === form.service);
+
+  const loadMyReservations = useCallback(
+    async (nextToken = token) => {
+      if (!nextToken) return;
+
+      try {
+        const response = await fetch("/api/reservations", {
+          headers: {
+            Authorization: `Bearer ${nextToken}`,
+          },
+        });
+        const result = await response.json().catch(() => ({}));
+
+        if (response.ok) {
+          setMyReservations(result.reservations || []);
+        }
+      } catch {
+        setMyReservations([]);
+      }
+    },
+    [token],
+  );
 
   useEffect(() => {
     const savedUser = localStorage.getItem("bookingUser");
@@ -65,6 +89,15 @@ export default function Home() {
         }
       });
   }, []);
+
+  useEffect(() => {
+    if (!user || !token) {
+      setMyReservations([]);
+      return;
+    }
+
+    loadMyReservations(token);
+  }, [loadMyReservations, user, token]);
 
   useEffect(() => {
     if (!form.date) {
@@ -94,6 +127,41 @@ export default function Home() {
     localStorage.removeItem("bookingToken");
     setUser(null);
     setToken("");
+    setMyReservations([]);
+  }
+
+  async function cancelMyReservation(id: string) {
+    if (!token) return;
+
+    setCancelingReservationId(id);
+    setStatus({ type: "", message: "Cancelando cita..." });
+
+    try {
+      const response = await fetch("/api/reservations", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ id, action: "delete" }),
+      });
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        setStatus({ type: "error", message: result.error || "No se pudo cancelar la cita." });
+        return;
+      }
+
+      setMyReservations((current) => current.filter((reservation) => reservation.id !== id));
+      setStatus({ type: "ok", message: "Cita cancelada correctamente." });
+    } catch {
+      setStatus({
+        type: "error",
+        message: "No se pudo conectar con el servidor. Prueba otra vez.",
+      });
+    } finally {
+      setCancelingReservationId("");
+    }
   }
 
   async function submitAuth(event: FormEvent<HTMLFormElement>) {
@@ -160,6 +228,7 @@ export default function Home() {
       }
 
       setForm(initialForm);
+      await loadMyReservations(token);
       setStatus({
         type: "ok",
         message:
@@ -232,11 +301,44 @@ export default function Home() {
               </div>
 
               {user ? (
-                <div className="account-summary">
-                  <strong>{user.name}</strong>
-                  <span>{user.phone}</span>
-                  <span>{user.email}</span>
-                </div>
+                <>
+                  <div className="account-summary">
+                    <strong>{user.name}</strong>
+                    <span>{user.phone}</span>
+                    <span>{user.email}</span>
+                  </div>
+                  <div className="client-reservations">
+                    <h3>Mis citas</h3>
+                    {myReservations.length ? (
+                      myReservations.map((reservation) => (
+                        <div className="client-reservation" key={reservation.id}>
+                          <div>
+                            <strong>{reservation.service}</strong>
+                            <span>
+                              {reservation.date} a las {reservation.time} -{" "}
+                              {reservation.durationMinutes} min
+                            </span>
+                            <span>
+                              {reservation.price ? `${reservation.price} EUR` : "A consultar"}
+                            </span>
+                          </div>
+                          <button
+                            className="text-button danger"
+                            disabled={cancelingReservationId === reservation.id}
+                            onClick={() => cancelMyReservation(reservation.id)}
+                            type="button"
+                          >
+                            {cancelingReservationId === reservation.id
+                              ? "Cancelando..."
+                              : "Cancelar"}
+                          </button>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="status">No tienes citas reservadas.</div>
+                    )}
+                  </div>
+                </>
               ) : (
                 <form className="form-grid" onSubmit={submitAuth}>
                   <div className="segmented">

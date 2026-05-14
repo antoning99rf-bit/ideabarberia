@@ -762,6 +762,41 @@ export async function listReservations(): Promise<Reservation[]> {
   return readLocalReservations();
 }
 
+export async function listReservationsByUser(userId: string): Promise<Reservation[]> {
+  await ensureSchema();
+
+  if (hasMysqlConfig()) {
+    const [rows] = await getPool().execute<mysql.RowDataPacket[]>(
+      `SELECT id, user_id, name, phone, email, service, price, duration_minutes, calendar_event_id, date, time, status, created_at
+       FROM reservations
+       WHERE user_id = ?
+       ORDER BY date ASC, time ASC`,
+      [userId],
+    );
+
+    return rows.map((row) => ({
+      id: row.id,
+      userId: row.user_id,
+      name: row.name,
+      phone: row.phone,
+      email: row.email,
+      service: row.service,
+      price: Number(row.price),
+      durationMinutes: Number(row.duration_minutes || 30),
+      calendarEventId: row.calendar_event_id || null,
+      date: row.date instanceof Date ? row.date.toISOString().slice(0, 10) : String(row.date),
+      time: row.time,
+      status: row.status,
+      createdAt: new Date(row.created_at).toISOString(),
+    }));
+  }
+
+  const reservations = await readLocalReservations();
+  return reservations
+    .filter((reservation) => reservation.userId === userId)
+    .sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`));
+}
+
 export async function getReservationById(id: string): Promise<Reservation | null> {
   await ensureSchema();
 

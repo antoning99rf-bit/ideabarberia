@@ -10,6 +10,7 @@ import {
   deleteReservation,
   getReservationById,
   listReservations,
+  listReservationsByUser,
   saveReservation,
   updateReservationCalendarEventId,
   updateReservationSchedule,
@@ -20,47 +21,63 @@ import type { IntegrationResult, ReservationInput } from "@/lib/types";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
+async function syncReservationsFromCalendar(reservations: Awaited<ReturnType<typeof listReservations>>) {
+  const updates = await Promise.all(
+    reservations
+      .filter((reservation) => reservation.calendarEventId)
+      .map(async (reservation) => {
+        try {
+          const sync = await getCalendarEventSync(reservation.calendarEventId);
+          if (!sync.exists) {
+            await deleteReservation(reservation.id);
+            return true;
+          }
+
+          const schedule = sync.schedule;
+          if (
+            !schedule ||
+            (schedule.date === reservation.date &&
+              schedule.time === reservation.time &&
+              schedule.durationMinutes === reservation.durationMinutes)
+          ) {
+            return false;
+          }
+
+          await updateReservationSchedule(reservation.id, schedule);
+          return true;
+        } catch {
+          return false;
+        }
+      }),
+  );
+
+  return updates.some(Boolean);
+}
+
 export async function GET(request: NextRequest) {
   const adminPassword = process.env.ADMIN_PASSWORD || "admin123";
   const providedPassword = request.headers.get("x-admin-password");
 
-  if (providedPassword !== adminPassword) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-  }
-
   try {
-    const reservations = await listReservations();
-    const updates = await Promise.all(
-      reservations
-        .filter((reservation) => reservation.calendarEventId)
-        .map(async (reservation) => {
-          try {
-            const sync = await getCalendarEventSync(reservation.calendarEventId);
-            if (!sync.exists) {
-              await deleteReservation(reservation.id);
-              return true;
-            }
+    if (providedPassword === adminPassword) {
+      const reservations = await listReservations();
+      const updated = await syncReservationsFromCalendar(reservations);
 
-            const schedule = sync.schedule;
-            if (
-              !schedule ||
-              (schedule.date === reservation.date &&
-                schedule.time === reservation.time &&
-                schedule.durationMinutes === reservation.durationMinutes)
-            ) {
-              return false;
-            }
+      return NextResponse.json({
+        reservations: updated ? await listReservations() : reservations,
+      });
+    }
 
-            await updateReservationSchedule(reservation.id, schedule);
-            return true;
-          } catch {
-            return false;
-          }
-        }),
-    );
+    const user = verifySessionToken(request.headers.get("authorization"));
+    if (!user) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    }
+
+    const reservations = await listReservationsByUser(user.id);
+    const updated = await syncReservationsFromCalendar(reservations);
 
     return NextResponse.json({
-      reservations: updates.some(Boolean) ? await listReservations() : reservations,
+      reservations: updated ? await listReservationsByUser(user.id) : reservations,
     });
   } catch (error) {
     return NextResponse.json(
@@ -131,8 +148,10 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   const adminPassword = process.env.ADMIN_PASSWORD || "admin123";
   const providedPassword = request.headers.get("x-admin-password");
+  const user = verifySessionToken(request.headers.get("authorization"));
+  const isAdmin = providedPassword === adminPassword;
 
-  if (providedPassword !== adminPassword) {
+  if (!isAdmin && !user) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
 
@@ -144,6 +163,9 @@ export async function PATCH(request: NextRequest) {
   const reservation = await getReservationById(input.id);
   if (!reservation) {
     return NextResponse.json({ error: "Reserva no encontrada." }, { status: 404 });
+  }
+  if (!isAdmin && reservation.userId !== user?.id) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 403 });
   }
 
   const integrations: IntegrationResult[] = [];
