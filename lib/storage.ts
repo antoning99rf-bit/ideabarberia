@@ -6,6 +6,8 @@ import { hashPassword, verifyPassword } from "./auth";
 import { BusyRange, hasGoogleCalendarConfig, listCalendarBusyRanges } from "./reservations";
 import {
   BlockedSlot,
+  RecurrenceInput,
+  RecurringSeries,
   Reservation,
   ReservationInput,
   ServiceItem,
@@ -45,6 +47,10 @@ const localPasswordResetTokensFile = path.join(
   process.env.VERCEL ? "/tmp" : process.cwd(),
   "password-reset-tokens.local.json",
 );
+const localRecurringSeriesFile = path.join(
+  process.env.VERCEL ? "/tmp" : process.cwd(),
+  "recurring-series.local.json",
+);
 
 let pool: mysql.Pool | null = null;
 let schemaReady = false;
@@ -54,6 +60,7 @@ let memoryServices: ServiceItem[] = defaultServiceCatalog;
 let memoryBlockedSlots: BlockedSlot[] = [];
 let memoryWorkingHours: WorkingDay[] = defaultWorkingHours;
 let memoryPasswordResetTokens: PasswordResetToken[] = [];
+let memoryRecurringSeries: RecurringSeries[] = [];
 
 type PasswordResetToken = {
   id: string;
@@ -138,6 +145,12 @@ async function ensureSchema() {
   await db.query("ALTER TABLE services ADD COLUMN duration_minutes INT NOT NULL DEFAULT 30").catch(() => undefined);
   await db.query("ALTER TABLE reservations ADD COLUMN duration_minutes INT NOT NULL DEFAULT 30").catch(() => undefined);
   await db.query("ALTER TABLE reservations ADD COLUMN calendar_event_id VARCHAR(255) NULL").catch(() => undefined);
+  await db.query("ALTER TABLE reservations ADD COLUMN series_id VARCHAR(36) NULL").catch(() => undefined);
+  await db.query("ALTER TABLE reservations ADD COLUMN series_index INT NULL").catch(() => undefined);
+  await db.query("ALTER TABLE reservations ADD COLUMN start_at_utc DATETIME NULL").catch(() => undefined);
+  await db.query("ALTER TABLE reservations ADD COLUMN end_at_utc DATETIME NULL").catch(() => undefined);
+  await db.query("CREATE INDEX reservations_series_id_idx ON reservations (series_id)").catch(() => undefined);
+  await db.query("CREATE UNIQUE INDEX reservations_series_index_idx ON reservations (series_id, series_index)").catch(() => undefined);
   await db.query(`
     CREATE TABLE IF NOT EXISTS blocked_slots (
       id VARCHAR(36) PRIMARY KEY,
@@ -158,6 +171,31 @@ async function ensureSchema() {
       afternoon_start VARCHAR(5) NOT NULL,
       afternoon_end VARCHAR(5) NOT NULL,
       updated_at DATETIME NOT NULL
+    )
+  `);
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS recurring_series (
+      id VARCHAR(36) PRIMARY KEY,
+      user_id VARCHAR(36) NOT NULL,
+      name VARCHAR(120) NOT NULL,
+      phone VARCHAR(40) NOT NULL,
+      email VARCHAR(190) NOT NULL,
+      service VARCHAR(80) NOT NULL,
+      price DECIMAL(8,2) NOT NULL,
+      duration_minutes INT NOT NULL DEFAULT 30,
+      recurrence_rule VARCHAR(20) NOT NULL,
+      recurrence_interval INT NOT NULL DEFAULT 1,
+      recurrence_end_mode VARCHAR(20) NOT NULL,
+      recurrence_end_date DATE NULL,
+      recurrence_count INT NULL,
+      start_date DATE NOT NULL,
+      start_time VARCHAR(5) NOT NULL,
+      status VARCHAR(20) NOT NULL,
+      created_at DATETIME NOT NULL,
+      updated_at DATETIME NOT NULL,
+      INDEX recurring_series_user_id_idx (user_id),
+      INDEX recurring_series_status_idx (status),
+      CONSTRAINT recurring_series_user_id_fk FOREIGN KEY (user_id) REFERENCES users(id)
     )
   `);
   await db.query(`
@@ -275,6 +313,11 @@ async function readLocalPasswordResetTokens() {
   return memoryPasswordResetTokens;
 }
 
+async function readLocalRecurringSeries() {
+  memoryRecurringSeries = await readJson(localRecurringSeriesFile, memoryRecurringSeries);
+  return memoryRecurringSeries;
+}
+
 function hashResetToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
@@ -300,6 +343,33 @@ function toTime(minutes: number) {
   return `${String(hours).padStart(2, "0")}:${String(rest).padStart(2, "0")}`;
 }
 
+function localDateTimeToUtc(date: string, time: string, timeZone = process.env.TIME_ZONE || "Atlantic/Canary") {
+  const [year, month, day] = date.split("-").map(Number);
+  const [hour, minute] = time.split(":").map(Number);
+  const utcGuess = Date.UTC(year, month - 1, day, hour, minute);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date(utcGuess));
+  const get = (type: string) => Number(parts.find((part) => part.type === type)?.value || 0);
+  const shownAsUtc = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"));
+  const offset = shownAsUtc - utcGuess;
+
+  return new Date(utcGuess - offset);
+}
+
+function getReservationUtcRange(date: string, time: string, durationMinutes: number) {
+  const start = localDateTimeToUtc(date, time);
+  const end = new Date(start.getTime() + durationMinutes * 60000);
+
+  return { start, end };
+}
+
 function slotsForRange(start: string, end: string, durationMinutes = 30) {
   const slots: string[] = [];
   const startMinutes = toMinutes(start);
@@ -314,6 +384,73 @@ function slotsForRange(start: string, end: string, durationMinutes = 30) {
   }
 
   return slots;
+}
+
+function addDateInterval(date: string, frequency: RecurrenceInput["frequency"], interval: number) {
+  const current = new Date(`${date}T00:00:00.000Z`);
+
+  if (frequency === "months") {
+    const originalDay = current.getUTCDate();
+    current.setUTCDate(1);
+    current.setUTCMonth(current.getUTCMonth() + interval);
+    const lastDay = new Date(
+      Date.UTC(current.getUTCFullYear(), current.getUTCMonth() + 1, 0),
+    ).getUTCDate();
+    current.setUTCDate(Math.min(originalDay, lastDay));
+  } else {
+    current.setUTCDate(
+      current.getUTCDate() + interval * (frequency === "weeks" ? 7 : 1),
+    );
+  }
+
+  return current.toISOString().slice(0, 10);
+}
+
+function normalizeRecurrence(input?: RecurrenceInput): RecurrenceInput | null {
+  if (!input || input.frequency === "none") return null;
+
+  const interval = Math.max(1, Math.min(36, Number(input.interval || 1)));
+  const endMode = input.endMode || "count";
+  const count = Math.max(1, Math.min(200, Number(input.count || 10)));
+
+  return {
+    frequency: input.frequency,
+    interval,
+    endMode,
+    count: endMode === "count" ? count : undefined,
+    endDate: endMode === "date" ? input.endDate : undefined,
+  };
+}
+
+function generateOccurrenceDates(startDate: string, recurrence?: RecurrenceInput) {
+  const normalized = normalizeRecurrence(recurrence);
+  if (!normalized) return [startDate];
+
+  const dates: string[] = [];
+  const maxOccurrences =
+    normalized.endMode === "count" ? normalized.count || 1 : normalized.endMode === "date" ? 200 : 52;
+  let currentDate = startDate;
+
+  while (dates.length < maxOccurrences) {
+    if (normalized.endMode === "date" && normalized.endDate && currentDate > normalized.endDate) {
+      break;
+    }
+
+    dates.push(currentDate);
+    currentDate = addDateInterval(currentDate, normalized.frequency, normalized.interval);
+  }
+
+  return dates;
+}
+
+function describeRecurrence(series: RecurringSeries) {
+  const unit =
+    series.recurrenceFrequency === "days"
+      ? "dias"
+      : series.recurrenceFrequency === "weeks"
+        ? "semanas"
+        : "meses";
+  return `Cada ${series.recurrenceInterval} ${unit}`;
 }
 
 export function getDefaultTimeSlots() {
@@ -902,7 +1039,7 @@ export async function listReservations(): Promise<Reservation[]> {
 
   if (hasMysqlConfig()) {
     const [rows] = await getPool().execute<mysql.RowDataPacket[]>(
-      `SELECT id, user_id, name, phone, email, service, price, duration_minutes, calendar_event_id, date, time, status, created_at
+      `SELECT id, user_id, name, phone, email, service, price, duration_minutes, calendar_event_id, series_id, series_index, date, time, status, created_at
        FROM reservations
        ORDER BY created_at DESC`,
     );
@@ -917,6 +1054,8 @@ export async function listReservations(): Promise<Reservation[]> {
       price: Number(row.price),
       durationMinutes: Number(row.duration_minutes || 30),
       calendarEventId: row.calendar_event_id || null,
+      seriesId: row.series_id || null,
+      seriesIndex: row.series_index ?? null,
       date: row.date instanceof Date ? row.date.toISOString().slice(0, 10) : String(row.date),
       time: row.time,
       status: row.status,
@@ -932,7 +1071,7 @@ export async function listReservationsByUser(userId: string): Promise<Reservatio
 
   if (hasMysqlConfig()) {
     const [rows] = await getPool().execute<mysql.RowDataPacket[]>(
-      `SELECT id, user_id, name, phone, email, service, price, duration_minutes, calendar_event_id, date, time, status, created_at
+      `SELECT id, user_id, name, phone, email, service, price, duration_minutes, calendar_event_id, series_id, series_index, date, time, status, created_at
        FROM reservations
        WHERE user_id = ?
        ORDER BY date ASC, time ASC`,
@@ -949,6 +1088,8 @@ export async function listReservationsByUser(userId: string): Promise<Reservatio
       price: Number(row.price),
       durationMinutes: Number(row.duration_minutes || 30),
       calendarEventId: row.calendar_event_id || null,
+      seriesId: row.series_id || null,
+      seriesIndex: row.series_index ?? null,
       date: row.date instanceof Date ? row.date.toISOString().slice(0, 10) : String(row.date),
       time: row.time,
       status: row.status,
@@ -967,7 +1108,7 @@ export async function getReservationById(id: string): Promise<Reservation | null
 
   if (hasMysqlConfig()) {
     const [rows] = await getPool().execute<mysql.RowDataPacket[]>(
-      `SELECT id, user_id, name, phone, email, service, price, duration_minutes, calendar_event_id, date, time, status, created_at
+      `SELECT id, user_id, name, phone, email, service, price, duration_minutes, calendar_event_id, series_id, series_index, date, time, status, created_at
        FROM reservations
        WHERE id = ?
        LIMIT 1`,
@@ -986,6 +1127,8 @@ export async function getReservationById(id: string): Promise<Reservation | null
       price: Number(row.price),
       durationMinutes: Number(row.duration_minutes || 30),
       calendarEventId: row.calendar_event_id || null,
+      seriesId: row.series_id || null,
+      seriesIndex: row.series_index ?? null,
       date: row.date instanceof Date ? row.date.toISOString().slice(0, 10) : String(row.date),
       time: row.time,
       status: row.status,
@@ -1033,11 +1176,12 @@ export async function updateReservationSchedule(
   input: { date: string; time: string; durationMinutes: number },
 ) {
   await ensureSchema();
+  const utcRange = getReservationUtcRange(input.date, input.time, input.durationMinutes);
 
   if (hasMysqlConfig()) {
     await getPool().execute(
-      "UPDATE reservations SET date = ?, time = ?, duration_minutes = ? WHERE id = ?",
-      [input.date, input.time, input.durationMinutes, id],
+      "UPDATE reservations SET date = ?, time = ?, duration_minutes = ?, start_at_utc = ?, end_at_utc = ? WHERE id = ?",
+      [input.date, input.time, input.durationMinutes, utcRange.start, utcRange.end, id],
     );
     return;
   }
@@ -1056,19 +1200,34 @@ export async function updateReservationSchedule(
   await writeJson(localReservationsFile, memoryReservations);
 }
 
-export async function saveReservation(input: ReservationInput, user: User): Promise<Reservation> {
+type SaveReservationOptions = {
+  seriesId?: string | null;
+  seriesIndex?: number | null;
+};
+
+export async function saveReservation(
+  input: ReservationInput,
+  user: User,
+  options: SaveReservationOptions = {},
+): Promise<Reservation> {
   await ensureSchema();
 
+  const durationMinutes = (await getServiceByName(input.service))?.durationMinutes || 30;
+  const utcRange = getReservationUtcRange(input.date, input.time, durationMinutes);
   const reservation: Reservation = {
-    ...input,
+    service: input.service,
+    date: input.date,
+    time: input.time,
     id: randomUUID(),
     userId: user.id,
     name: user.name,
     phone: user.phone,
     email: user.email,
     price: await getServicePrice(input.service),
-    durationMinutes: (await getServiceByName(input.service))?.durationMinutes || 30,
+    durationMinutes,
     calendarEventId: null,
+    seriesId: options.seriesId ?? null,
+    seriesIndex: options.seriesIndex ?? null,
     createdAt: new Date().toISOString(),
     status: "Reservada",
   };
@@ -1076,8 +1235,8 @@ export async function saveReservation(input: ReservationInput, user: User): Prom
   if (hasMysqlConfig()) {
     await getPool().execute(
       `INSERT INTO reservations
-       (id, user_id, name, phone, email, service, price, duration_minutes, calendar_event_id, date, time, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, user_id, name, phone, email, service, price, duration_minutes, calendar_event_id, series_id, series_index, date, time, status, created_at, start_at_utc, end_at_utc)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         reservation.id,
         user.id,
@@ -1088,10 +1247,14 @@ export async function saveReservation(input: ReservationInput, user: User): Prom
         reservation.price,
         reservation.durationMinutes,
         reservation.calendarEventId ?? null,
+        reservation.seriesId ?? null,
+        reservation.seriesIndex ?? null,
         reservation.date,
         reservation.time,
         reservation.status,
         new Date(reservation.createdAt),
+        utcRange.start,
+        utcRange.end,
       ],
     );
   } else {
@@ -1103,3 +1266,218 @@ export async function saveReservation(input: ReservationInput, user: User): Prom
 
   return reservation;
 }
+
+export async function saveRecurringReservations(
+  input: ReservationInput,
+  user: User,
+): Promise<{ series: RecurringSeries | null; reservations: Reservation[] }> {
+  const recurrence = normalizeRecurrence(input.recurrence);
+  if (!recurrence) {
+    const reservation = await saveReservation(input, user);
+    return { series: null, reservations: [reservation] };
+  }
+  if (recurrence.endMode === "date" && !recurrence.endDate) {
+    throw new Error("Selecciona la fecha final de la recurrencia.");
+  }
+
+  await ensureSchema();
+  const dates = generateOccurrenceDates(input.date, recurrence);
+  if (!dates.length) throw new Error("La recurrencia no genera ninguna cita.");
+
+  for (const date of dates) {
+    const errors = await validateReservation({ service: input.service, date, time: input.time });
+    if (errors.length) {
+      throw new Error(`Conflicto el ${date} a las ${input.time}: ${errors.join(" ")}`);
+    }
+  }
+
+  const service = await getServiceByName(input.service);
+  const now = new Date().toISOString();
+  const series: RecurringSeries = {
+    id: randomUUID(),
+    userId: user.id,
+    name: user.name,
+    phone: user.phone,
+    email: user.email,
+    service: input.service,
+    price: service?.price ?? 0,
+    durationMinutes: service?.durationMinutes ?? 30,
+    recurrenceFrequency: recurrence.frequency,
+    recurrenceInterval: recurrence.interval,
+    recurrenceEndMode: recurrence.endMode,
+    recurrenceEndDate: recurrence.endDate || null,
+    recurrenceCount: recurrence.count || null,
+    startDate: input.date,
+    startTime: input.time,
+    status: "active",
+    createdAt: now,
+    updatedAt: now,
+    nextDate: input.date,
+    generatedCount: dates.length,
+  };
+
+  if (hasMysqlConfig()) {
+    await getPool().execute(
+      `INSERT INTO recurring_series
+       (id, user_id, name, phone, email, service, price, duration_minutes, recurrence_rule,
+        recurrence_interval, recurrence_end_mode, recurrence_end_date, recurrence_count,
+        start_date, start_time, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        series.id,
+        series.userId,
+        series.name,
+        series.phone,
+        series.email,
+        series.service,
+        series.price,
+        series.durationMinutes,
+        series.recurrenceFrequency,
+        series.recurrenceInterval,
+        series.recurrenceEndMode,
+        series.recurrenceEndDate || null,
+        series.recurrenceCount || null,
+        series.startDate,
+        series.startTime,
+        series.status,
+        new Date(series.createdAt),
+        new Date(series.updatedAt),
+      ],
+    );
+  } else {
+    const seriesList = await readLocalRecurringSeries();
+    seriesList.unshift(series);
+    memoryRecurringSeries = seriesList;
+    await writeJson(localRecurringSeriesFile, seriesList);
+  }
+
+  const reservations: Reservation[] = [];
+  for (let index = 0; index < dates.length; index += 1) {
+    reservations.push(
+      await saveReservation(
+        { service: input.service, date: dates[index], time: input.time },
+        user,
+        { seriesId: series.id, seriesIndex: index + 1 },
+      ),
+    );
+  }
+
+  return { series, reservations };
+}
+
+export async function listRecurringSeries(): Promise<RecurringSeries[]> {
+  await ensureSchema();
+
+  if (hasMysqlConfig()) {
+    const [rows] = await getPool().execute<mysql.RowDataPacket[]>(
+      `SELECT
+        s.id, s.user_id, s.name, s.phone, s.email, s.service, s.price, s.duration_minutes,
+        s.recurrence_rule, s.recurrence_interval, s.recurrence_end_mode,
+        s.recurrence_end_date, s.recurrence_count, s.start_date, s.start_time,
+        s.status, s.created_at, s.updated_at,
+        COALESCE(stats.generated_count, 0) AS generated_count,
+        stats.next_date
+       FROM recurring_series s
+       LEFT JOIN (
+         SELECT
+           series_id,
+           COUNT(id) AS generated_count,
+           MIN(CASE WHEN date >= CURDATE() THEN date ELSE NULL END) AS next_date
+         FROM reservations
+         WHERE series_id IS NOT NULL
+         GROUP BY series_id
+       ) stats ON stats.series_id = s.id
+       ORDER BY s.created_at DESC`,
+    );
+
+    return rows.map((row) => ({
+      id: row.id,
+      userId: row.user_id,
+      name: row.name,
+      phone: row.phone,
+      email: row.email,
+      service: row.service,
+      price: Number(row.price),
+      durationMinutes: Number(row.duration_minutes || 30),
+      recurrenceFrequency: row.recurrence_rule,
+      recurrenceInterval: Number(row.recurrence_interval || 1),
+      recurrenceEndMode: row.recurrence_end_mode,
+      recurrenceEndDate:
+        row.recurrence_end_date instanceof Date
+          ? row.recurrence_end_date.toISOString().slice(0, 10)
+          : row.recurrence_end_date
+            ? String(row.recurrence_end_date)
+            : null,
+      recurrenceCount: row.recurrence_count === null ? null : Number(row.recurrence_count),
+      startDate:
+        row.start_date instanceof Date ? row.start_date.toISOString().slice(0, 10) : String(row.start_date),
+      startTime: row.start_time,
+      status: row.status,
+      createdAt: new Date(row.created_at).toISOString(),
+      updatedAt: new Date(row.updated_at).toISOString(),
+      nextDate:
+        row.next_date instanceof Date
+          ? row.next_date.toISOString().slice(0, 10)
+          : row.next_date
+            ? String(row.next_date)
+            : null,
+      generatedCount: Number(row.generated_count || 0),
+    }));
+  }
+
+  const reservations = await readLocalReservations();
+  return (await readLocalRecurringSeries()).map((series) => {
+    const seriesReservations = reservations.filter((reservation) => reservation.seriesId === series.id);
+    const future = seriesReservations
+      .map((reservation) => reservation.date)
+      .filter((date) => date >= new Date().toISOString().slice(0, 10))
+      .sort()[0];
+    return {
+      ...series,
+      nextDate: future || null,
+      generatedCount: seriesReservations.length,
+    };
+  });
+}
+
+export async function updateRecurringSeriesStatus(id: string, status: RecurringSeries["status"]) {
+  await ensureSchema();
+
+  if (hasMysqlConfig()) {
+    await getPool().execute("UPDATE recurring_series SET status = ?, updated_at = ? WHERE id = ?", [
+      status,
+      new Date(),
+      id,
+    ]);
+    return;
+  }
+
+  memoryRecurringSeries = (await readLocalRecurringSeries()).map((series) =>
+    series.id === id ? { ...series, status, updatedAt: new Date().toISOString() } : series,
+  );
+  await writeJson(localRecurringSeriesFile, memoryRecurringSeries);
+}
+
+export async function listReservationsBySeries(seriesId: string): Promise<Reservation[]> {
+  return (await listReservations())
+    .filter((reservation) => reservation.seriesId === seriesId)
+    .sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`));
+}
+
+export async function deleteReservationsBySeries(seriesId: string) {
+  const reservations = await listReservationsBySeries(seriesId);
+
+  if (hasMysqlConfig()) {
+    await getPool().execute("DELETE FROM reservations WHERE series_id = ?", [seriesId]);
+  } else {
+    memoryReservations = (await readLocalReservations()).filter(
+      (reservation) => reservation.seriesId !== seriesId,
+    );
+    await writeJson(localReservationsFile, memoryReservations);
+  }
+
+  await updateRecurringSeriesStatus(seriesId, "cancelled");
+  return reservations;
+}
+
+export { describeRecurrence };

@@ -96,6 +96,8 @@ export async function createCalendarEvent(reservation: Reservation) {
         `Precio: ${reservation.price ? `${reservation.price} EUR` : "A consultar"}`,
         `Duracion: ${reservation.durationMinutes || 30} min`,
         `Reserva: ${reservation.id}`,
+        reservation.seriesId ? `Serie: ${reservation.seriesId}` : null,
+        reservation.seriesIndex ? `Cita de serie: ${reservation.seriesIndex}` : null,
       ].join("\n"),
       start: {
         dateTime: `${reservation.date}T${reservation.time}:00`,

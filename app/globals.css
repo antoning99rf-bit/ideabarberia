@@ -371,6 +371,17 @@ h1 {
   color: var(--accent);
 }
 
+.recurrence-box {
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+}
+
+.recurrence-box .field {
+  min-width: 0;
+}
+
 .status {
   color: var(--muted);
   font-size: 0.92rem;

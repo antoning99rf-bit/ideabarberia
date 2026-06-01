@@ -64,12 +64,15 @@ export type ReservationInput = {
   service: Service;
   date: string;
   time: string;
+  recurrence?: RecurrenceInput;
 };
 
 export type Reservation = ReservationInput & {
   id: string;
   userId?: string;
   calendarEventId?: string | null;
+  seriesId?: string | null;
+  seriesIndex?: number | null;
   createdAt: string;
   name: string;
   phone: string;
@@ -77,6 +80,41 @@ export type Reservation = ReservationInput & {
   price: number;
   durationMinutes: number;
   status: string;
+};
+
+export type RecurrenceFrequency = "none" | "days" | "weeks" | "months";
+
+export type RecurrenceEndMode = "count" | "date" | "never";
+
+export type RecurrenceInput = {
+  frequency: RecurrenceFrequency;
+  interval: number;
+  endMode: RecurrenceEndMode;
+  count?: number;
+  endDate?: string;
+};
+
+export type RecurringSeries = {
+  id: string;
+  userId: string;
+  name: string;
+  phone: string;
+  email: string;
+  service: string;
+  price: number;
+  durationMinutes: number;
+  recurrenceFrequency: RecurrenceFrequency;
+  recurrenceInterval: number;
+  recurrenceEndMode: RecurrenceEndMode;
+  recurrenceEndDate?: string | null;
+  recurrenceCount?: number | null;
+  startDate: string;
+  startTime: string;
+  status: "active" | "paused" | "cancelled";
+  createdAt: string;
+  updatedAt: string;
+  nextDate?: string | null;
+  generatedCount?: number;
 };
 
 export type BlockedSlot = {

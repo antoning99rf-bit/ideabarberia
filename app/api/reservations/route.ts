@@ -8,10 +8,15 @@ import {
 import { verifySessionToken } from "@/lib/auth";
 import {
   deleteReservation,
+  deleteReservationsBySeries,
   getReservationById,
+  listRecurringSeries,
   listReservations,
   listReservationsByUser,
+  listReservationsBySeries,
   saveReservation,
+  saveRecurringReservations,
+  updateRecurringSeriesStatus,
   updateReservationCalendarEventId,
   updateReservationSchedule,
   validateReservation,
@@ -65,6 +70,7 @@ export async function GET(request: NextRequest) {
 
       return NextResponse.json({
         reservations: updated ? await listReservations() : reservations,
+        recurringSeries: await listRecurringSeries(),
       });
     }
 
@@ -97,36 +103,50 @@ export async function POST(request: NextRequest) {
   }
 
   const input = (await request.json()) as ReservationInput;
-  const errors = await validateReservation(input);
+  const errors = input.recurrence?.frequency && input.recurrence.frequency !== "none"
+    ? []
+    : await validateReservation(input);
 
   if (errors.length) {
     return NextResponse.json({ error: errors.join(" ") }, { status: 400 });
   }
 
   try {
-    const reservation = await saveReservation(input, {
-      ...user,
-      createdAt: new Date().toISOString(),
-    });
+    const result = input.recurrence?.frequency && input.recurrence.frequency !== "none"
+      ? await saveRecurringReservations(input, {
+          ...user,
+          createdAt: new Date().toISOString(),
+        })
+      : {
+          series: null,
+          reservations: [
+            await saveReservation(input, {
+              ...user,
+              createdAt: new Date().toISOString(),
+            }),
+          ],
+        };
     const integrations: IntegrationResult[] = [];
 
-    try {
-      const calendar = await createCalendarEvent(reservation);
-      integrations.push({ name: "calendar", ...calendar });
-      if (calendar.eventId) {
-        reservation.calendarEventId = calendar.eventId;
-        await updateReservationCalendarEventId(reservation.id, calendar.eventId);
+    for (const reservation of result.reservations) {
+      try {
+        const calendar = await createCalendarEvent(reservation);
+        integrations.push({ name: "calendar", ...calendar });
+        if (calendar.eventId) {
+          reservation.calendarEventId = calendar.eventId;
+          await updateReservationCalendarEventId(reservation.id, calendar.eventId);
+        }
+      } catch (error) {
+        integrations.push({
+          name: "calendar",
+          ok: false,
+          detail: error instanceof Error ? error.message : "No se pudo crear evento.",
+        });
       }
-    } catch (error) {
-      integrations.push({
-        name: "calendar",
-        ok: false,
-        detail: error instanceof Error ? error.message : "No se pudo crear evento.",
-      });
     }
 
     try {
-      const whatsapp = await sendWhatsAppConfirmation(reservation);
+      const whatsapp = await sendWhatsAppConfirmation(result.reservations[0]);
       integrations.push({ name: "whatsapp", ...whatsapp });
     } catch (error) {
       integrations.push({
@@ -136,7 +156,15 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    return NextResponse.json({ reservation, integrations }, { status: 201 });
+    return NextResponse.json(
+      {
+        reservation: result.reservations[0],
+        reservations: result.reservations,
+        series: result.series,
+        integrations,
+      },
+      { status: 201 },
+    );
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Error guardando reserva" },
@@ -156,6 +184,43 @@ export async function PATCH(request: NextRequest) {
   }
 
   const input = await request.json();
+
+  if (input.seriesId && ["pause-series", "reactivate-series", "delete-series"].includes(input.action)) {
+    if (!isAdmin) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+    }
+
+    if (input.action === "pause-series" || input.action === "reactivate-series") {
+      await updateRecurringSeriesStatus(
+        input.seriesId,
+        input.action === "pause-series" ? "paused" : "active",
+      );
+      return NextResponse.json({ ok: true, recurringSeries: await listRecurringSeries() });
+    }
+
+    const reservations = await listReservationsBySeries(input.seriesId);
+    const integrations: IntegrationResult[] = [];
+    for (const reservation of reservations) {
+      try {
+        const calendar = await deleteCalendarEventForReservation(reservation);
+        integrations.push({ name: "calendar", ...calendar });
+      } catch (error) {
+        return NextResponse.json(
+          {
+            error:
+              error instanceof Error
+                ? `No se pudo eliminar un evento de Google Calendar: ${error.message}`
+                : "No se pudo eliminar un evento de Google Calendar.",
+          },
+          { status: 500 },
+        );
+      }
+    }
+
+    await deleteReservationsBySeries(input.seriesId);
+    return NextResponse.json({ ok: true, integrations, recurringSeries: await listRecurringSeries() });
+  }
+
   if (!input.id || input.action !== "delete") {
     return NextResponse.json({ error: "Solicitud invalida." }, { status: 400 });
   }

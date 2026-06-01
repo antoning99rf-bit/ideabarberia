@@ -1,7 +1,13 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import type { BlockedSlot, Reservation, ServiceItem, WorkingDay } from "@/lib/types";
+import type {
+  BlockedSlot,
+  RecurringSeries,
+  Reservation,
+  ServiceItem,
+  WorkingDay,
+} from "@/lib/types";
 
 type NewService = {
   name: string;
@@ -21,6 +27,7 @@ export default function AdminPage() {
   const [password, setPassword] = useState("");
   const [savedPassword, setSavedPassword] = useState("");
   const [reservations, setReservations] = useState<Reservation[]>([]);
+  const [recurringSeries, setRecurringSeries] = useState<RecurringSeries[]>([]);
   const [services, setServices] = useState<ServiceItem[]>([]);
   const [blockedSlots, setBlockedSlots] = useState<BlockedSlot[]>([]);
   const [workingHours, setWorkingHours] = useState<WorkingDay[]>([]);
@@ -41,6 +48,7 @@ export default function AdminPage() {
 
     if (!response.ok) throw new Error(result.error || "No se pudieron cargar las reservas.");
     setReservations(result.reservations);
+    setRecurringSeries(result.recurringSeries || []);
   }
 
   async function loadServices(currentPassword: string) {
@@ -233,6 +241,46 @@ export default function AdminPage() {
 
     await loadReservations(savedPassword);
     setStatus("Reserva eliminada.");
+  }
+
+  async function updateSeries(seriesId: string, action: string) {
+    const labels: Record<string, string> = {
+      "pause-series": "Pausando serie...",
+      "reactivate-series": "Reactivando serie...",
+      "delete-series": "Cancelando serie completa...",
+    };
+    setStatus(labels[action] || "Actualizando serie...");
+    setError("");
+
+    const response = await fetch("/api/reservations", {
+      method: "PATCH",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({ seriesId, action }),
+    });
+    const result = await response.json();
+
+    if (!response.ok) {
+      setError(result.error || "No se pudo actualizar la serie.");
+      setStatus("");
+      return;
+    }
+
+    await loadReservations(savedPassword);
+    setStatus(
+      action === "delete-series"
+        ? "Serie cancelada y citas eliminadas."
+        : "Serie actualizada.",
+    );
+  }
+
+  function recurrenceLabel(series: RecurringSeries) {
+    const unit =
+      series.recurrenceFrequency === "days"
+        ? "dias"
+        : series.recurrenceFrequency === "weeks"
+          ? "semanas"
+          : "meses";
+    return `Cada ${series.recurrenceInterval} ${unit}`;
   }
 
   useEffect(() => {
@@ -638,6 +686,78 @@ export default function AdminPage() {
                   {!reservations.length ? (
                     <tr>
                       <td colSpan={10}>Aun no hay reservas.</td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section className="admin-section">
+            <h2>Series recurrentes</h2>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Cliente</th>
+                    <th>Servicio</th>
+                    <th>Frecuencia</th>
+                    <th>Proxima cita</th>
+                    <th>Citas</th>
+                    <th>Estado</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recurringSeries.map((series) => (
+                    <tr key={series.id}>
+                      <td>
+                        <strong>{series.name}</strong>
+                        <br />
+                        {series.phone}
+                      </td>
+                      <td>{series.service}</td>
+                      <td>{recurrenceLabel(series)}</td>
+                      <td>{series.nextDate || "Sin proximas"}</td>
+                      <td>{series.generatedCount || 0}</td>
+                      <td>
+                        <span className="pill">{series.status}</span>
+                      </td>
+                      <td>
+                        <div className="row-actions">
+                          {series.status === "paused" ? (
+                            <button
+                              className="button button-secondary"
+                              onClick={() => updateSeries(series.id, "reactivate-series")}
+                              type="button"
+                            >
+                              Reactivar
+                            </button>
+                          ) : (
+                            <button
+                              className="button button-secondary"
+                              disabled={series.status === "cancelled"}
+                              onClick={() => updateSeries(series.id, "pause-series")}
+                              type="button"
+                            >
+                              Pausar
+                            </button>
+                          )}
+                          <button
+                            className="button button-secondary"
+                            disabled={series.status === "cancelled"}
+                            onClick={() => updateSeries(series.id, "delete-series")}
+                            type="button"
+                          >
+                            Cancelar serie
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {!recurringSeries.length ? (
+                    <tr>
+                      <td colSpan={7}>Aun no hay series recurrentes.</td>
                     </tr>
                   ) : null}
                 </tbody>

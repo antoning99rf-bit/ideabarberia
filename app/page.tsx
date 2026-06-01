@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import type { Reservation, ServiceItem, User } from "@/lib/types";
+import type { RecurrenceInput, Reservation, ServiceItem, User } from "@/lib/types";
 
 type FormState = {
   service: string;
@@ -29,11 +29,23 @@ const initialAuthForm: AuthForm = {
   password: "",
 };
 
+const initialCustomRecurrence: RecurrenceInput = {
+  frequency: "weeks",
+  interval: 1,
+  endMode: "count",
+  count: 10,
+  endDate: "",
+};
+
 export default function Home() {
   const [form, setForm] = useState(initialForm);
   const [services, setServices] = useState<ServiceItem[]>([]);
   const [availableTimes, setAvailableTimes] = useState<string[]>([]);
   const [authForm, setAuthForm] = useState(initialAuthForm);
+  const [repeatMode, setRepeatMode] = useState("none");
+  const [customRecurrence, setCustomRecurrence] = useState<RecurrenceInput>(
+    initialCustomRecurrence,
+  );
   const [authMode, setAuthMode] = useState<"register" | "login">("register");
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState("");
@@ -47,6 +59,33 @@ export default function Home() {
   const [isLoadingReservations, setIsLoadingReservations] = useState(false);
 
   const selectedService = services.find((service) => service.name === form.service);
+
+  function getRecurrence(): RecurrenceInput | undefined {
+    if (repeatMode === "none") return undefined;
+    if (repeatMode === "weekly") {
+      return { frequency: "weeks", interval: 1, endMode: "count", count: 10 };
+    }
+    if (repeatMode === "2-weeks") {
+      return { frequency: "weeks", interval: 2, endMode: "count", count: 10 };
+    }
+    if (repeatMode === "3-weeks") {
+      return { frequency: "weeks", interval: 3, endMode: "count", count: 10 };
+    }
+    if (repeatMode === "monthly") {
+      return { frequency: "months", interval: 1, endMode: "count", count: 10 };
+    }
+
+    return {
+      frequency: customRecurrence.frequency,
+      interval: Math.max(1, Number(customRecurrence.interval || 1)),
+      endMode: customRecurrence.endMode,
+      count:
+        customRecurrence.endMode === "count"
+          ? Math.max(1, Number(customRecurrence.count || 1))
+          : undefined,
+      endDate: customRecurrence.endMode === "date" ? customRecurrence.endDate : undefined,
+    };
+  }
 
   const loadMyReservations = useCallback(
     async (nextToken = token) => {
@@ -258,7 +297,7 @@ export default function Home() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, recurrence: getRecurrence() }),
       });
       const result = await response.json().catch(() => ({}));
 
@@ -268,11 +307,16 @@ export default function Home() {
       }
 
       setForm(initialForm);
+      setRepeatMode("none");
+      setCustomRecurrence(initialCustomRecurrence);
       await loadMyReservations(token);
+      const createdCount = Array.isArray(result.reservations) ? result.reservations.length : 1;
       setStatus({
         type: "ok",
         message:
-          "Cita reservada. Si WhatsApp esta configurado, recibiras la confirmacion en tu numero.",
+          createdCount > 1
+            ? `${createdCount} citas recurrentes reservadas. Si WhatsApp esta configurado, recibiras la confirmacion en tu numero.`
+            : "Cita reservada. Si WhatsApp esta configurado, recibiras la confirmacion en tu numero.",
       });
     } catch {
       setStatus({
@@ -462,6 +506,7 @@ export default function Home() {
                           <span>
                             {reservation.price ? `${reservation.price} EUR` : "A consultar"}
                           </span>
+                          {reservation.seriesId ? <span>Serie recurrente #{reservation.seriesIndex}</span> : null}
                         </div>
                         <button
                           className="text-button danger"
@@ -541,6 +586,111 @@ export default function Home() {
                     ))}
                   </select>
                 </div>
+                <div className="field">
+                  <label htmlFor="repeat">Repetir cita</label>
+                  <select
+                    disabled={!user}
+                    id="repeat"
+                    onChange={(event) => setRepeatMode(event.target.value)}
+                    value={repeatMode}
+                  >
+                    <option value="none">No repetir</option>
+                    <option value="weekly">Cada semana</option>
+                    <option value="2-weeks">Cada 2 semanas</option>
+                    <option value="3-weeks">Cada 3 semanas</option>
+                    <option value="monthly">Cada mes</option>
+                    <option value="custom">Personalizado</option>
+                  </select>
+                </div>
+                {repeatMode === "custom" ? (
+                  <div className="recurrence-box">
+                    <div className="field">
+                      <label htmlFor="recurrence-frequency">Frecuencia</label>
+                      <select
+                        id="recurrence-frequency"
+                        onChange={(event) =>
+                          setCustomRecurrence({
+                            ...customRecurrence,
+                            frequency: event.target.value as RecurrenceInput["frequency"],
+                          })
+                        }
+                        value={customRecurrence.frequency}
+                      >
+                        <option value="days">Dias</option>
+                        <option value="weeks">Semanas</option>
+                        <option value="months">Meses</option>
+                      </select>
+                    </div>
+                    <div className="field">
+                      <label htmlFor="recurrence-interval">Intervalo</label>
+                      <input
+                        id="recurrence-interval"
+                        min={1}
+                        onChange={(event) =>
+                          setCustomRecurrence({
+                            ...customRecurrence,
+                            interval: Number(event.target.value),
+                          })
+                        }
+                        type="number"
+                        value={customRecurrence.interval}
+                      />
+                    </div>
+                    <div className="field">
+                      <label htmlFor="recurrence-end">Finalizacion</label>
+                      <select
+                        id="recurrence-end"
+                        onChange={(event) =>
+                          setCustomRecurrence({
+                            ...customRecurrence,
+                            endMode: event.target.value as RecurrenceInput["endMode"],
+                          })
+                        }
+                        value={customRecurrence.endMode}
+                      >
+                        <option value="count">Tras X repeticiones</option>
+                        <option value="date">En una fecha concreta</option>
+                        <option value="never">Sin fecha de finalizacion</option>
+                      </select>
+                    </div>
+                    {customRecurrence.endMode === "count" ? (
+                      <div className="field">
+                        <label htmlFor="recurrence-count">Numero de citas</label>
+                        <input
+                          id="recurrence-count"
+                          min={1}
+                          max={200}
+                          onChange={(event) =>
+                            setCustomRecurrence({
+                              ...customRecurrence,
+                              count: Number(event.target.value),
+                            })
+                          }
+                          type="number"
+                          value={customRecurrence.count || 1}
+                        />
+                      </div>
+                    ) : null}
+                    {customRecurrence.endMode === "date" ? (
+                      <div className="field">
+                        <label htmlFor="recurrence-end-date">Hasta</label>
+                        <input
+                          id="recurrence-end-date"
+                          min={form.date || new Date().toISOString().slice(0, 10)}
+                          onChange={(event) =>
+                            setCustomRecurrence({
+                              ...customRecurrence,
+                              endDate: event.target.value,
+                            })
+                          }
+                          required
+                          type="date"
+                          value={customRecurrence.endDate || ""}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
                 <button
                   className="button button-primary"
                   disabled={isSubmitting || !user}
