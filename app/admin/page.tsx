@@ -6,6 +6,7 @@ import type {
   RecurringSeries,
   Reservation,
   ServiceItem,
+  User,
   WorkingDay,
 } from "@/lib/types";
 
@@ -28,12 +29,14 @@ export default function AdminPage() {
   const [savedPassword, setSavedPassword] = useState("");
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [recurringSeries, setRecurringSeries] = useState<RecurringSeries[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [services, setServices] = useState<ServiceItem[]>([]);
   const [blockedSlots, setBlockedSlots] = useState<BlockedSlot[]>([]);
   const [workingHours, setWorkingHours] = useState<WorkingDay[]>([]);
   const [slots, setSlots] = useState<string[]>([]);
   const [newService, setNewService] = useState(emptyService);
   const [blockForm, setBlockForm] = useState({ date: "", time: "", reason: "" });
+  const [userBlockReasons, setUserBlockReasons] = useState<Record<string, string>>({});
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
 
@@ -75,6 +78,17 @@ export default function AdminPage() {
     setWorkingHours(result.workingHours || []);
   }
 
+  async function loadUsers(currentPassword: string) {
+    const response = await fetch("/api/users", {
+      headers: { "x-admin-password": currentPassword },
+      cache: "no-store",
+    });
+    const result = await response.json();
+
+    if (!response.ok) throw new Error(result.error || "No se pudieron cargar los clientes.");
+    setUsers(result.users || []);
+  }
+
   async function loadAdminData(currentPassword = savedPassword) {
     setStatus("Cargando panel...");
     setError("");
@@ -84,6 +98,7 @@ export default function AdminPage() {
         loadReservations(currentPassword),
         loadServices(currentPassword),
         loadAvailability(currentPassword),
+        loadUsers(currentPassword),
       ]);
       setStatus("");
     } catch (loadError) {
@@ -271,6 +286,31 @@ export default function AdminPage() {
         ? "Serie cancelada y citas eliminadas."
         : "Serie actualizada.",
     );
+  }
+
+  async function updateUserBlock(user: User, blocked: boolean) {
+    setStatus(blocked ? "Bloqueando cliente..." : "Desbloqueando cliente...");
+    setError("");
+
+    const response = await fetch("/api/users", {
+      method: "PATCH",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userId: user.id,
+        blocked,
+        reason: userBlockReasons[user.id] || user.blockedReason || "",
+      }),
+    });
+    const result = await response.json();
+
+    if (!response.ok) {
+      setError(result.error || "No se pudo actualizar el cliente.");
+      setStatus("");
+      return;
+    }
+
+    setUsers(result.users || []);
+    setStatus(blocked ? "Cliente bloqueado. Se ha intentado enviar aviso por email." : "Cliente desbloqueado.");
   }
 
   function recurrenceLabel(series: RecurringSeries) {
@@ -686,6 +726,74 @@ export default function AdminPage() {
                   {!reservations.length ? (
                     <tr>
                       <td colSpan={10}>Aun no hay reservas.</td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section className="admin-section">
+            <h2>Clientes</h2>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Cliente</th>
+                    <th>Telefono</th>
+                    <th>Email</th>
+                    <th>Estado</th>
+                    <th>Motivo bloqueo</th>
+                    <th>Accion</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {users.map((client) => (
+                    <tr key={client.id}>
+                      <td>{client.name}</td>
+                      <td>{client.phone}</td>
+                      <td>{client.email}</td>
+                      <td>
+                        <span className={`pill ${client.blockedAt ? "danger-pill" : ""}`}>
+                          {client.blockedAt ? "Bloqueado" : "Activo"}
+                        </span>
+                      </td>
+                      <td>
+                        <input
+                          onChange={(event) =>
+                            setUserBlockReasons((current) => ({
+                              ...current,
+                              [client.id]: event.target.value,
+                            }))
+                          }
+                          placeholder="Ej: no se presento a varias citas"
+                          value={userBlockReasons[client.id] ?? client.blockedReason ?? ""}
+                        />
+                      </td>
+                      <td>
+                        {client.blockedAt ? (
+                          <button
+                            className="button button-secondary"
+                            onClick={() => updateUserBlock(client, false)}
+                            type="button"
+                          >
+                            Desbloquear
+                          </button>
+                        ) : (
+                          <button
+                            className="button button-secondary"
+                            onClick={() => updateUserBlock(client, true)}
+                            type="button"
+                          >
+                            Bloquear
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                  {!users.length ? (
+                    <tr>
+                      <td colSpan={6}>Aun no hay clientes registrados.</td>
                     </tr>
                   ) : null}
                 </tbody>

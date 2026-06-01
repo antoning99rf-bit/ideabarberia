@@ -207,6 +207,8 @@ export type User = {
   phone: string;
   email: string;
   createdAt: string;
+  blockedAt?: string | null;
+  blockedReason?: string | null;
 };
 
 export type IntegrationResult = {

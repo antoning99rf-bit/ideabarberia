@@ -321,6 +321,11 @@ h1 {
   color: var(--muted);
 }
 
+.account-summary .blocked-account {
+  color: var(--danger);
+  font-weight: 800;
+}
+
 .client-reservations {
   display: grid;
   gap: 10px;
@@ -600,6 +605,11 @@ td {
   color: var(--accent);
   display: inline-block;
   padding: 6px 9px;
+}
+
+.danger-pill {
+  background: rgba(239, 143, 143, 0.14);
+  color: var(--danger);
 }
 
 @media (max-width: 1040px) {

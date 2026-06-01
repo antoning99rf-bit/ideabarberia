@@ -59,6 +59,7 @@ export default function Home() {
   const [isLoadingReservations, setIsLoadingReservations] = useState(false);
 
   const selectedService = services.find((service) => service.name === form.service);
+  const isUserBlocked = Boolean(user?.blockedAt);
 
   function getRecurrence(): RecurrenceInput | undefined {
     if (repeatMode === "none") return undefined;
@@ -382,6 +383,12 @@ export default function Home() {
                   <strong>{user.name}</strong>
                   <span>{user.phone}</span>
                   <span>{user.email}</span>
+                  {isUserBlocked ? (
+                    <span className="blocked-account">
+                      Cuenta bloqueada para nuevas reservas
+                      {user.blockedReason ? `: ${user.blockedReason}` : "."}
+                    </span>
+                  ) : null}
                 </div>
               ) : (
                 <form className="form-grid" onSubmit={submitAuth}>
@@ -530,11 +537,17 @@ export default function Home() {
               {!user ? (
                 <div className="status error">Debes registrarte o iniciar sesion antes.</div>
               ) : null}
+              {isUserBlocked ? (
+                <div className="status error">
+                  Tu cuenta esta bloqueada para nuevas reservas. Si crees que es un error,
+                  contacta con la barberia.
+                </div>
+              ) : null}
               <div className="form-grid">
                 <div className="field">
                   <label htmlFor="service">Servicio</label>
                   <select
-                    disabled={!user}
+                    disabled={!user || isUserBlocked}
                     id="service"
                     onChange={(event) => setForm({ ...form, service: event.target.value })}
                     value={form.service}
@@ -558,7 +571,7 @@ export default function Home() {
                 <div className="field">
                   <label htmlFor="date">Fecha</label>
                   <input
-                    disabled={!user}
+                    disabled={!user || isUserBlocked}
                     id="date"
                     onChange={(event) => setForm({ ...form, date: event.target.value })}
                     required
@@ -570,7 +583,7 @@ export default function Home() {
                 <div className="field">
                   <label htmlFor="time">Hora</label>
                   <select
-                    disabled={!user || !form.date}
+                    disabled={!user || isUserBlocked || !form.date}
                     id="time"
                     onChange={(event) => setForm({ ...form, time: event.target.value })}
                     required
@@ -589,7 +602,7 @@ export default function Home() {
                 <div className="field">
                   <label htmlFor="repeat">Repetir cita</label>
                   <select
-                    disabled={!user}
+                    disabled={!user || isUserBlocked}
                     id="repeat"
                     onChange={(event) => setRepeatMode(event.target.value)}
                     value={repeatMode}
@@ -693,7 +706,7 @@ export default function Home() {
                 ) : null}
                 <button
                   className="button button-primary"
-                  disabled={isSubmitting || !user}
+                  disabled={isSubmitting || !user || isUserBlocked}
                   type="submit"
                 >
                   {isSubmitting ? "Reservando..." : "Confirmar reserva"}

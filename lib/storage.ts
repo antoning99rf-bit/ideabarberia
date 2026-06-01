@@ -108,9 +108,13 @@ async function ensureSchema() {
       phone VARCHAR(40) NOT NULL,
       email VARCHAR(190) NOT NULL UNIQUE,
       password_hash VARCHAR(190) NOT NULL,
+      blocked_at DATETIME NULL,
+      blocked_reason VARCHAR(255) NULL,
       created_at DATETIME NOT NULL
     )
   `);
+  await db.query("ALTER TABLE users ADD COLUMN blocked_at DATETIME NULL").catch(() => undefined);
+  await db.query("ALTER TABLE users ADD COLUMN blocked_reason VARCHAR(255) NULL").catch(() => undefined);
   await db.query(`
     CREATE TABLE IF NOT EXISTS reservations (
       id VARCHAR(36) PRIMARY KEY,
@@ -329,6 +333,8 @@ function publicUser(user: StoredUser): User {
     phone: user.phone,
     email: user.email,
     createdAt: user.createdAt,
+    blockedAt: user.blockedAt || null,
+    blockedReason: user.blockedReason || null,
   };
 }
 
@@ -883,7 +889,7 @@ export async function findUserByCredentials(email: string, password: string) {
 
   if (hasMysqlConfig()) {
     const [rows] = await getPool().execute<mysql.RowDataPacket[]>(
-      `SELECT id, name, phone, email, password_hash, created_at
+      `SELECT id, name, phone, email, password_hash, blocked_at, blocked_reason, created_at
        FROM users
        WHERE email = ?
        LIMIT 1`,
@@ -898,6 +904,8 @@ export async function findUserByCredentials(email: string, password: string) {
       phone: row.phone,
       email: row.email,
       createdAt: new Date(row.created_at).toISOString(),
+      blockedAt: row.blocked_at ? new Date(row.blocked_at).toISOString() : null,
+      blockedReason: row.blocked_reason || null,
     } satisfies User;
   }
 
@@ -914,7 +922,7 @@ export async function findUserByEmail(email: string) {
 
   if (hasMysqlConfig()) {
     const [rows] = await getPool().execute<mysql.RowDataPacket[]>(
-      `SELECT id, name, phone, email, created_at
+      `SELECT id, name, phone, email, blocked_at, blocked_reason, created_at
        FROM users
        WHERE email = ?
        LIMIT 1`,
@@ -929,12 +937,111 @@ export async function findUserByEmail(email: string) {
       phone: row.phone,
       email: row.email,
       createdAt: new Date(row.created_at).toISOString(),
+      blockedAt: row.blocked_at ? new Date(row.blocked_at).toISOString() : null,
+      blockedReason: row.blocked_reason || null,
     } satisfies User;
   }
 
   const users = await readLocalUsers();
   const user = users.find((currentUser) => currentUser.email === normalizedEmail);
   return user ? publicUser(user) : null;
+}
+
+export async function getUserById(id: string) {
+  await ensureSchema();
+
+  if (hasMysqlConfig()) {
+    const [rows] = await getPool().execute<mysql.RowDataPacket[]>(
+      `SELECT id, name, phone, email, blocked_at, blocked_reason, created_at
+       FROM users
+       WHERE id = ?
+       LIMIT 1`,
+      [id],
+    );
+    const row = rows[0];
+    if (!row) return null;
+
+    return {
+      id: row.id,
+      name: row.name,
+      phone: row.phone,
+      email: row.email,
+      createdAt: new Date(row.created_at).toISOString(),
+      blockedAt: row.blocked_at ? new Date(row.blocked_at).toISOString() : null,
+      blockedReason: row.blocked_reason || null,
+    } satisfies User;
+  }
+
+  const user = (await readLocalUsers()).find((currentUser) => currentUser.id === id);
+  return user ? publicUser(user) : null;
+}
+
+export async function listUsers(): Promise<User[]> {
+  await ensureSchema();
+
+  if (hasMysqlConfig()) {
+    const [rows] = await getPool().execute<mysql.RowDataPacket[]>(
+      `SELECT id, name, phone, email, blocked_at, blocked_reason, created_at
+       FROM users
+       ORDER BY created_at DESC`,
+    );
+
+    return rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      phone: row.phone,
+      email: row.email,
+      createdAt: new Date(row.created_at).toISOString(),
+      blockedAt: row.blocked_at ? new Date(row.blocked_at).toISOString() : null,
+      blockedReason: row.blocked_reason || null,
+    }));
+  }
+
+  return (await readLocalUsers()).map(publicUser);
+}
+
+export async function setUserBlocked(input: {
+  userId: string;
+  blocked: boolean;
+  reason?: string;
+}) {
+  await ensureSchema();
+  const reason = input.reason?.trim() || "Incumplimiento de asistencia a citas.";
+  const blockedAt = input.blocked ? new Date() : null;
+
+  if (hasMysqlConfig()) {
+    await getPool().execute(
+      "UPDATE users SET blocked_at = ?, blocked_reason = ? WHERE id = ?",
+      [blockedAt, input.blocked ? reason : null, input.userId],
+    );
+    return getUserById(input.userId);
+  }
+
+  const users = await readLocalUsers();
+  memoryUsers = users.map((user) =>
+    user.id === input.userId
+      ? {
+          ...user,
+          blockedAt: blockedAt?.toISOString() || null,
+          blockedReason: input.blocked ? reason : null,
+        }
+      : user,
+  );
+  await writeJson(localUsersFile, memoryUsers);
+  return getUserById(input.userId);
+}
+
+export async function assertUserCanBook(userId: string) {
+  const user = await getUserById(userId);
+  if (!user) throw new Error("Usuario no encontrado.");
+  if (user.blockedAt) {
+    throw new Error(
+      `Tu cuenta esta bloqueada para nuevas reservas. Motivo: ${
+        user.blockedReason || "contacta con la barberia"
+      }.`,
+    );
+  }
+  return user;
 }
 
 export async function createPasswordResetToken(email: string) {

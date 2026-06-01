@@ -16,6 +16,7 @@ import {
   listReservationsBySeries,
   saveReservation,
   saveRecurringReservations,
+  assertUserCanBook,
   updateRecurringSeriesStatus,
   updateReservationCalendarEventId,
   updateReservationSchedule,
@@ -99,6 +100,20 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       { error: "Debes registrarte o iniciar sesion para reservar." },
       { status: 401 },
+    );
+  }
+
+  try {
+    await assertUserCanBook(user.id);
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Tu cuenta esta bloqueada para nuevas reservas.",
+      },
+      { status: 403 },
     );
   }
 
