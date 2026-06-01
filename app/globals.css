@@ -45,37 +45,6 @@ select {
     url("https://images.unsplash.com/photo-1585747860715-2ba37e788b70?auto=format&fit=crop&w=1800&q=82") center/cover fixed;
 }
 
-.topbar {
-  align-items: center;
-  display: flex;
-  justify-content: space-between;
-  margin: 0 auto;
-  max-width: 1120px;
-  padding: 24px;
-}
-
-.brand {
-  align-items: center;
-  display: flex;
-  gap: 12px;
-  font-size: 0.95rem;
-  font-weight: 900;
-  letter-spacing: 0.04em;
-  min-width: 0;
-  text-transform: uppercase;
-}
-
-.brand-logo {
-  aspect-ratio: 1210 / 768;
-  background: #030303;
-  border: 1px solid var(--line);
-  height: auto;
-  object-fit: contain;
-  padding: 3px 5px;
-  flex: 0 0 auto;
-  width: 70px;
-}
-
 .nav-link {
   border: 1px solid var(--line);
   color: var(--text);
@@ -646,14 +615,6 @@ td {
 }
 
 @media (max-width: 560px) {
-  .topbar {
-    padding: 18px;
-  }
-
-  .brand span:last-child {
-    display: none;
-  }
-
   .hero {
     min-height: auto;
     padding: 28px 18px 56px;

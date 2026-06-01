@@ -287,13 +287,6 @@ export default function Home() {
   return (
     <>
       <main className="page-shell">
-        <header className="topbar">
-          <a className="brand" href="#">
-            <img alt="" className="brand-logo" src="/brand/bt-logo.jpeg" />
-            <span>BrunoTooledoo</span>
-          </a>
-        </header>
-
         <section className="hero">
           <div className="hero-copy">
             <img
