@@ -337,7 +337,7 @@ export default function Home() {
             <img
               alt="Bruno Tooledoo Barber Studio"
               className="hero-logo"
-              src="/brand/bt-logo.jpeg"
+              src="/brand/bt-logo-full.png"
             />
             <div className="eyebrow">ES / GB - Gran Canaria / Firgas</div>
             <h1>BrunoTooledoo</h1>

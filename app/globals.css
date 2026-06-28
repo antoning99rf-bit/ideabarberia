@@ -71,13 +71,14 @@ select {
 }
 
 .hero-logo {
-  aspect-ratio: 1210 / 768;
+  aspect-ratio: 1536 / 1024;
   border: 1px solid var(--line);
   display: block;
   height: auto;
   margin-bottom: 24px;
-  max-width: 370px;
-  width: min(100%, 370px);
+  max-width: 460px;
+  object-fit: contain;
+  width: min(100%, 460px);
 }
 
 .eyebrow {

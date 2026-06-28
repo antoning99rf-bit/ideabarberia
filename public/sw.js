@@ -1,9 +1,10 @@
-const CACHE_NAME = "barber-studio-v8";
+const CACHE_NAME = "barber-studio-v9";
 const APP_SHELL = [
   "/",
   "/admin",
   "/manifest.webmanifest",
   "/brand/bt-logo.jpeg",
+  "/brand/bt-logo-full.png",
   "/icons/icon.svg",
   "/icons/maskable.svg",
 ];
