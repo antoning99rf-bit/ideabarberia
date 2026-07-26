@@ -17,6 +17,7 @@ import {
   saveReservation,
   saveRecurringReservations,
   assertUserCanBook,
+  getPublicStorageError,
   updateRecurringSeriesStatus,
   updateReservationCalendarEventId,
   updateReservationSchedule,
@@ -87,9 +88,10 @@ export async function GET(request: NextRequest) {
       reservations: updated ? await listReservationsByUser(user.id) : reservations,
     });
   } catch (error) {
+    const publicError = getPublicStorageError(error, "Error cargando reservas");
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Error cargando reservas" },
-      { status: 500 },
+      { error: publicError.message },
+      { status: publicError.status === 400 ? 500 : publicError.status },
     );
   }
 }
@@ -106,14 +108,15 @@ export async function POST(request: NextRequest) {
   try {
     await assertUserCanBook(user.id);
   } catch (error) {
+    const publicError = getPublicStorageError(
+      error,
+      "Tu cuenta esta bloqueada para nuevas reservas.",
+    );
     return NextResponse.json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Tu cuenta esta bloqueada para nuevas reservas.",
+        error: publicError.message,
       },
-      { status: 403 },
+      { status: publicError.status === 503 ? 503 : 403 },
     );
   }
 
@@ -181,9 +184,10 @@ export async function POST(request: NextRequest) {
       { status: 201 },
     );
   } catch (error) {
+    const publicError = getPublicStorageError(error, "Error guardando reserva");
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Error guardando reserva" },
-      { status: 500 },
+      { error: publicError.message },
+      { status: publicError.status === 400 ? 500 : publicError.status },
     );
   }
 }

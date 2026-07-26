@@ -120,6 +120,36 @@ function isMysqlConnectionError(error: unknown) {
   );
 }
 
+function isMysqlDuplicateError(error: unknown) {
+  if (typeof error !== "object" || error === null) return false;
+  const code = "code" in error ? String((error as { code?: unknown }).code) : "";
+  const message = error instanceof Error ? error.message : "";
+
+  return code === "ER_DUP_ENTRY" || message.includes("Duplicate entry");
+}
+
+export function getPublicStorageError(error: unknown, fallback: string) {
+  if (isMysqlConnectionError(error)) {
+    return {
+      message:
+        "Ahora mismo no podemos conectar con la base de datos. Prueba de nuevo en unos minutos o contacta con la barberia.",
+      status: 503,
+    };
+  }
+
+  if (isMysqlDuplicateError(error)) {
+    return {
+      message: "Ya existe una cuenta con ese email.",
+      status: 400,
+    };
+  }
+
+  return {
+    message: error instanceof Error ? error.message : fallback,
+    status: 400,
+  };
+}
+
 async function resetPool() {
   const currentPool = pool;
   pool = null;

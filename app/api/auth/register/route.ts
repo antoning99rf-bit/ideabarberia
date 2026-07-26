@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSessionToken } from "@/lib/auth";
-import { createUser, validateRegistration } from "@/lib/storage";
+import { createUser, getPublicStorageError, validateRegistration } from "@/lib/storage";
 
 export const runtime = "nodejs";
 
@@ -19,9 +19,10 @@ export async function POST(request: Request) {
       token: createSessionToken(user),
     });
   } catch (error) {
+    const publicError = getPublicStorageError(error, "No se pudo crear la cuenta.");
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "No se pudo crear la cuenta." },
-      { status: 400 },
+      { error: publicError.message },
+      { status: publicError.status },
     );
   }
 }
