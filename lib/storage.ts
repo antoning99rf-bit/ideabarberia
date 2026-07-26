@@ -72,12 +72,49 @@ type PasswordResetToken = {
 };
 
 export function hasMysqlConfig() {
+  if (process.env.MYSQL_URL || process.env.DATABASE_URL) return true;
+
   return Boolean(
     process.env.MYSQL_HOST &&
       process.env.MYSQL_DATABASE &&
       process.env.MYSQL_USER &&
       process.env.MYSQL_PASSWORD,
   );
+}
+
+function getMysqlUrlOptions(urlValue: string): Partial<mysql.ConnectionOptions> {
+  const parsedUrl = new URL(urlValue);
+
+  return {
+    host: parsedUrl.hostname,
+    port: parsedUrl.port ? Number(parsedUrl.port) : 3306,
+    database: parsedUrl.pathname.replace(/^\//, ""),
+    user: decodeURIComponent(parsedUrl.username),
+    password: decodeURIComponent(parsedUrl.password),
+  };
+}
+
+function getMysqlHostOptions(): Partial<mysql.ConnectionOptions> {
+  const rawHost = process.env.MYSQL_HOST || "";
+  if (/^mysql:\/\//i.test(rawHost)) {
+    const options = getMysqlUrlOptions(rawHost);
+    return {
+      ...options,
+      database: process.env.MYSQL_DATABASE || options.database,
+      user: process.env.MYSQL_USER || options.user,
+      password: process.env.MYSQL_PASSWORD || options.password,
+      port: process.env.MYSQL_PORT ? Number(process.env.MYSQL_PORT) : options.port,
+    };
+  }
+
+  const hostParts = rawHost.match(/^(.+):(\d+)$/);
+  return {
+    host: hostParts ? hostParts[1] : rawHost,
+    port: process.env.MYSQL_PORT ? Number(process.env.MYSQL_PORT) : hostParts ? Number(hostParts[2]) : 3306,
+    database: process.env.MYSQL_DATABASE,
+    user: process.env.MYSQL_USER,
+    password: process.env.MYSQL_PASSWORD,
+  };
 }
 
 function getMysqlSslOptions(): mysql.ConnectionOptions["ssl"] {
@@ -105,12 +142,11 @@ function getPool() {
 }
 
 function getMysqlConnectionOptions(): mysql.ConnectionOptions {
+  const urlValue = process.env.MYSQL_URL || process.env.DATABASE_URL;
+  const connectionOptions = urlValue ? getMysqlUrlOptions(urlValue) : getMysqlHostOptions();
+
   return {
-    host: process.env.MYSQL_HOST,
-    port: Number(process.env.MYSQL_PORT || 3306),
-    database: process.env.MYSQL_DATABASE,
-    user: process.env.MYSQL_USER,
-    password: process.env.MYSQL_PASSWORD,
+    ...connectionOptions,
     ssl: getMysqlSslOptions(),
     enableKeepAlive: true,
     keepAliveInitialDelay: 0,
