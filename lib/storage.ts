@@ -80,6 +80,18 @@ export function hasMysqlConfig() {
   );
 }
 
+function getMysqlSslOptions(): mysql.ConnectionOptions["ssl"] {
+  const sslMode = String(process.env.MYSQL_SSL || "").toLowerCase();
+  if (!["1", "true", "required"].includes(sslMode)) return undefined;
+
+  const ca = process.env.MYSQL_CA_CERT?.replace(/\\n/g, "\n");
+  if (ca) return { ca, rejectUnauthorized: true };
+
+  return {
+    rejectUnauthorized: process.env.MYSQL_SSL_REJECT_UNAUTHORIZED === "true",
+  };
+}
+
 function getPool() {
   if (!pool) {
     pool = mysql.createPool({
@@ -99,7 +111,7 @@ function getMysqlConnectionOptions(): mysql.ConnectionOptions {
     database: process.env.MYSQL_DATABASE,
     user: process.env.MYSQL_USER,
     password: process.env.MYSQL_PASSWORD,
-    ssl: process.env.MYSQL_SSL === "true" ? { rejectUnauthorized: true } : undefined,
+    ssl: getMysqlSslOptions(),
     enableKeepAlive: true,
     keepAliveInitialDelay: 0,
     connectTimeout: 10000,
