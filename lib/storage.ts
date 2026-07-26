@@ -151,6 +151,28 @@ async function withMysqlRetry<T>(operation: (db: mysql.Connection) => Promise<T>
   }
 }
 
+function logMysqlReadFallback(context: string, error: unknown) {
+  const code =
+    typeof error === "object" && error !== null && "code" in error
+      ? String((error as { code?: unknown }).code)
+      : "unknown";
+  console.error(`[mysql:${context}] using fallback data`, {
+    code,
+    message: error instanceof Error ? error.message : "Unknown MySQL error",
+  });
+}
+
+async function ensureSchemaForRead(context: string) {
+  try {
+    await ensureSchema();
+    return true;
+  } catch (error) {
+    if (!isMysqlConnectionError(error)) throw error;
+    logMysqlReadFallback(context, error);
+    return false;
+  }
+}
+
 function queryDb<T extends mysql.QueryResult>(sql: string, values?: any[]) {
   return withMysqlRetry((db) => db.query<T>(sql, values));
 }
@@ -536,24 +558,30 @@ export function getDefaultTimeSlots() {
 }
 
 export async function getWorkingHours(): Promise<WorkingDay[]> {
-  await ensureSchema();
-
   if (hasMysqlConfig()) {
-    const [rows] = await executeDb<mysql.RowDataPacket[]>(
-      `SELECT day_of_week, label, active, morning_start, morning_end, afternoon_start, afternoon_end
-       FROM working_hours
-       ORDER BY FIELD(day_of_week, 1, 2, 3, 4, 5, 6, 0)`,
-    );
+    if (!(await ensureSchemaForRead("working-hours"))) return defaultWorkingHours;
 
-    return rows.map((row) => ({
-      dayOfWeek: Number(row.day_of_week),
-      label: row.label,
-      active: Boolean(row.active),
-      morningStart: row.morning_start,
-      morningEnd: row.morning_end,
-      afternoonStart: row.afternoon_start,
-      afternoonEnd: row.afternoon_end,
-    }));
+    try {
+      const [rows] = await executeDb<mysql.RowDataPacket[]>(
+        `SELECT day_of_week, label, active, morning_start, morning_end, afternoon_start, afternoon_end
+         FROM working_hours
+         ORDER BY FIELD(day_of_week, 1, 2, 3, 4, 5, 6, 0)`,
+      );
+
+      return rows.map((row) => ({
+        dayOfWeek: Number(row.day_of_week),
+        label: row.label,
+        active: Boolean(row.active),
+        morningStart: row.morning_start,
+        morningEnd: row.morning_end,
+        afternoonStart: row.afternoon_start,
+        afternoonEnd: row.afternoon_end,
+      }));
+    } catch (error) {
+      if (!isMysqlConnectionError(error)) throw error;
+      logMysqlReadFallback("working-hours", error);
+      return defaultWorkingHours;
+    }
   }
 
   return readLocalWorkingHours();
@@ -621,24 +649,36 @@ async function getSlotsForDate(date: string, durationMinutes = 30) {
 }
 
 export async function listServices(includeInactive = false): Promise<ServiceItem[]> {
-  await ensureSchema();
-
   if (hasMysqlConfig()) {
-    const [rows] = await executeDb<mysql.RowDataPacket[]>(
-      `SELECT id, name, price, duration_minutes, description, active
-       FROM services
-       ${includeInactive ? "" : "WHERE active = 1"}
-       ORDER BY name ASC`,
-    );
+    if (!(await ensureSchemaForRead("services"))) {
+      return includeInactive
+        ? defaultServiceCatalog
+        : defaultServiceCatalog.filter((service) => service.active);
+    }
 
-    return rows.map((row) => ({
-      id: row.id,
-      name: row.name,
-      price: Number(row.price),
-      durationMinutes: Number(row.duration_minutes || 30),
-      description: row.description,
-      active: Boolean(row.active),
-    }));
+    try {
+      const [rows] = await executeDb<mysql.RowDataPacket[]>(
+        `SELECT id, name, price, duration_minutes, description, active
+         FROM services
+         ${includeInactive ? "" : "WHERE active = 1"}
+         ORDER BY name ASC`,
+      );
+
+      return rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        price: Number(row.price),
+        durationMinutes: Number(row.duration_minutes || 30),
+        description: row.description,
+        active: Boolean(row.active),
+      }));
+    } catch (error) {
+      if (!isMysqlConnectionError(error)) throw error;
+      logMysqlReadFallback("services", error);
+      return includeInactive
+        ? defaultServiceCatalog
+        : defaultServiceCatalog.filter((service) => service.active);
+    }
   }
 
   const services = await readLocalServices();
@@ -719,22 +759,28 @@ export async function deleteService(id: string) {
 }
 
 export async function listBlockedSlots(): Promise<BlockedSlot[]> {
-  await ensureSchema();
-
   if (hasMysqlConfig()) {
-    const [rows] = await executeDb<mysql.RowDataPacket[]>(
-      `SELECT id, date, time, reason, created_at
-       FROM blocked_slots
-       ORDER BY date ASC, time ASC`,
-    );
+    if (!(await ensureSchemaForRead("blocked-slots"))) return [];
 
-    return rows.map((row) => ({
-      id: row.id,
-      date: row.date instanceof Date ? row.date.toISOString().slice(0, 10) : String(row.date),
-      time: row.time,
-      reason: row.reason,
-      createdAt: new Date(row.created_at).toISOString(),
-    }));
+    try {
+      const [rows] = await executeDb<mysql.RowDataPacket[]>(
+        `SELECT id, date, time, reason, created_at
+         FROM blocked_slots
+         ORDER BY date ASC, time ASC`,
+      );
+
+      return rows.map((row) => ({
+        id: row.id,
+        date: row.date instanceof Date ? row.date.toISOString().slice(0, 10) : String(row.date),
+        time: row.time,
+        reason: row.reason,
+        createdAt: new Date(row.created_at).toISOString(),
+      }));
+    } catch (error) {
+      if (!isMysqlConnectionError(error)) throw error;
+      logMysqlReadFallback("blocked-slots", error);
+      return [];
+    }
   }
 
   return readLocalBlockedSlots();
@@ -1203,66 +1249,78 @@ export async function resetPasswordWithToken(token: string, password: string) {
 }
 
 export async function listReservations(): Promise<Reservation[]> {
-  await ensureSchema();
-
   if (hasMysqlConfig()) {
-    const [rows] = await executeDb<mysql.RowDataPacket[]>(
-      `SELECT id, user_id, name, phone, email, service, price, duration_minutes, calendar_event_id, series_id, series_index, date, time, status, created_at
-       FROM reservations
-       ORDER BY created_at DESC`,
-    );
+    if (!(await ensureSchemaForRead("reservations"))) return [];
 
-    return rows.map((row) => ({
-      id: row.id,
-      userId: row.user_id,
-      name: row.name,
-      phone: row.phone,
-      email: row.email,
-      service: row.service,
-      price: Number(row.price),
-      durationMinutes: Number(row.duration_minutes || 30),
-      calendarEventId: row.calendar_event_id || null,
-      seriesId: row.series_id || null,
-      seriesIndex: row.series_index ?? null,
-      date: row.date instanceof Date ? row.date.toISOString().slice(0, 10) : String(row.date),
-      time: row.time,
-      status: row.status,
-      createdAt: new Date(row.created_at).toISOString(),
-    }));
+    try {
+      const [rows] = await executeDb<mysql.RowDataPacket[]>(
+        `SELECT id, user_id, name, phone, email, service, price, duration_minutes, calendar_event_id, series_id, series_index, date, time, status, created_at
+         FROM reservations
+         ORDER BY created_at DESC`,
+      );
+
+      return rows.map((row) => ({
+        id: row.id,
+        userId: row.user_id,
+        name: row.name,
+        phone: row.phone,
+        email: row.email,
+        service: row.service,
+        price: Number(row.price),
+        durationMinutes: Number(row.duration_minutes || 30),
+        calendarEventId: row.calendar_event_id || null,
+        seriesId: row.series_id || null,
+        seriesIndex: row.series_index ?? null,
+        date: row.date instanceof Date ? row.date.toISOString().slice(0, 10) : String(row.date),
+        time: row.time,
+        status: row.status,
+        createdAt: new Date(row.created_at).toISOString(),
+      }));
+    } catch (error) {
+      if (!isMysqlConnectionError(error)) throw error;
+      logMysqlReadFallback("reservations", error);
+      return [];
+    }
   }
 
   return readLocalReservations();
 }
 
 export async function listReservationsByUser(userId: string): Promise<Reservation[]> {
-  await ensureSchema();
-
   if (hasMysqlConfig()) {
-    const [rows] = await executeDb<mysql.RowDataPacket[]>(
-      `SELECT id, user_id, name, phone, email, service, price, duration_minutes, calendar_event_id, series_id, series_index, date, time, status, created_at
-       FROM reservations
-       WHERE user_id = ?
-       ORDER BY date ASC, time ASC`,
-      [userId],
-    );
+    if (!(await ensureSchemaForRead("reservations-by-user"))) return [];
 
-    return rows.map((row) => ({
-      id: row.id,
-      userId: row.user_id,
-      name: row.name,
-      phone: row.phone,
-      email: row.email,
-      service: row.service,
-      price: Number(row.price),
-      durationMinutes: Number(row.duration_minutes || 30),
-      calendarEventId: row.calendar_event_id || null,
-      seriesId: row.series_id || null,
-      seriesIndex: row.series_index ?? null,
-      date: row.date instanceof Date ? row.date.toISOString().slice(0, 10) : String(row.date),
-      time: row.time,
-      status: row.status,
-      createdAt: new Date(row.created_at).toISOString(),
-    }));
+    try {
+      const [rows] = await executeDb<mysql.RowDataPacket[]>(
+        `SELECT id, user_id, name, phone, email, service, price, duration_minutes, calendar_event_id, series_id, series_index, date, time, status, created_at
+         FROM reservations
+         WHERE user_id = ?
+         ORDER BY date ASC, time ASC`,
+        [userId],
+      );
+
+      return rows.map((row) => ({
+        id: row.id,
+        userId: row.user_id,
+        name: row.name,
+        phone: row.phone,
+        email: row.email,
+        service: row.service,
+        price: Number(row.price),
+        durationMinutes: Number(row.duration_minutes || 30),
+        calendarEventId: row.calendar_event_id || null,
+        seriesId: row.series_id || null,
+        seriesIndex: row.series_index ?? null,
+        date: row.date instanceof Date ? row.date.toISOString().slice(0, 10) : String(row.date),
+        time: row.time,
+        status: row.status,
+        createdAt: new Date(row.created_at).toISOString(),
+      }));
+    } catch (error) {
+      if (!isMysqlConnectionError(error)) throw error;
+      logMysqlReadFallback("reservations-by-user", error);
+      return [];
+    }
   }
 
   const reservations = await readLocalReservations();
