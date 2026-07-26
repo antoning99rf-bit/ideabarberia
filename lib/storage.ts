@@ -83,20 +83,27 @@ export function hasMysqlConfig() {
 function getPool() {
   if (!pool) {
     pool = mysql.createPool({
-      host: process.env.MYSQL_HOST,
-      port: Number(process.env.MYSQL_PORT || 3306),
-      database: process.env.MYSQL_DATABASE,
-      user: process.env.MYSQL_USER,
-      password: process.env.MYSQL_PASSWORD,
-      ssl: process.env.MYSQL_SSL === "true" ? { rejectUnauthorized: true } : undefined,
+      ...getMysqlConnectionOptions(),
       waitForConnections: true,
       connectionLimit: 5,
-      enableKeepAlive: true,
-      keepAliveInitialDelay: 0,
     });
   }
 
   return pool;
+}
+
+function getMysqlConnectionOptions(): mysql.ConnectionOptions {
+  return {
+    host: process.env.MYSQL_HOST,
+    port: Number(process.env.MYSQL_PORT || 3306),
+    database: process.env.MYSQL_DATABASE,
+    user: process.env.MYSQL_USER,
+    password: process.env.MYSQL_PASSWORD,
+    ssl: process.env.MYSQL_SSL === "true" ? { rejectUnauthorized: true } : undefined,
+    enableKeepAlive: true,
+    keepAliveInitialDelay: 0,
+    connectTimeout: 10000,
+  };
 }
 
 function isMysqlConnectionError(error: unknown) {
@@ -123,14 +130,24 @@ async function resetPool() {
   }
 }
 
-async function withMysqlRetry<T>(operation: (db: mysql.Pool) => Promise<T>) {
+async function withFreshConnection<T>(operation: (db: mysql.Connection) => Promise<T>) {
+  const connection = await mysql.createConnection(getMysqlConnectionOptions());
+
   try {
-    return await operation(getPool());
+    return await operation(connection);
+  } finally {
+    await connection.end().catch(() => undefined);
+  }
+}
+
+async function withMysqlRetry<T>(operation: (db: mysql.Connection) => Promise<T>) {
+  try {
+    return await withFreshConnection(operation);
   } catch (error) {
     if (!isMysqlConnectionError(error)) throw error;
 
     await resetPool();
-    return operation(getPool());
+    return withFreshConnection(operation);
   }
 }
 
