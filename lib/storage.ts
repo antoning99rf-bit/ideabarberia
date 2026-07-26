@@ -91,17 +91,61 @@ function getPool() {
       ssl: process.env.MYSQL_SSL === "true" ? { rejectUnauthorized: true } : undefined,
       waitForConnections: true,
       connectionLimit: 5,
+      enableKeepAlive: true,
+      keepAliveInitialDelay: 0,
     });
   }
 
   return pool;
 }
 
+function isMysqlConnectionError(error: unknown) {
+  if (typeof error !== "object" || error === null) return false;
+  const code = "code" in error ? String((error as { code?: unknown }).code) : "";
+  const message = error instanceof Error ? error.message : "";
+
+  return (
+    code === "PROTOCOL_CONNECTION_LOST" ||
+    code === "ECONNRESET" ||
+    code === "EPIPE" ||
+    message.includes("Connection lost") ||
+    message.includes("closed the connection")
+  );
+}
+
+async function resetPool() {
+  const currentPool = pool;
+  pool = null;
+  schemaReady = false;
+
+  if (currentPool) {
+    await currentPool.end().catch(() => undefined);
+  }
+}
+
+async function withMysqlRetry<T>(operation: (db: mysql.Pool) => Promise<T>) {
+  try {
+    return await operation(getPool());
+  } catch (error) {
+    if (!isMysqlConnectionError(error)) throw error;
+
+    await resetPool();
+    return operation(getPool());
+  }
+}
+
+function queryDb<T extends mysql.QueryResult>(sql: string, values?: any[]) {
+  return withMysqlRetry((db) => db.query<T>(sql, values));
+}
+
+function executeDb<T extends mysql.QueryResult>(sql: string, values?: any[]) {
+  return withMysqlRetry((db) => db.execute<T>(sql, values));
+}
+
 async function ensureSchema() {
   if (!hasMysqlConfig() || schemaReady) return;
 
-  const db = getPool();
-  await db.query(`
+  await queryDb(`
     CREATE TABLE IF NOT EXISTS users (
       id VARCHAR(36) PRIMARY KEY,
       name VARCHAR(120) NOT NULL,
@@ -113,9 +157,9 @@ async function ensureSchema() {
       created_at DATETIME NOT NULL
     )
   `);
-  await db.query("ALTER TABLE users ADD COLUMN blocked_at DATETIME NULL").catch(() => undefined);
-  await db.query("ALTER TABLE users ADD COLUMN blocked_reason VARCHAR(255) NULL").catch(() => undefined);
-  await db.query(`
+  await queryDb("ALTER TABLE users ADD COLUMN blocked_at DATETIME NULL").catch(() => undefined);
+  await queryDb("ALTER TABLE users ADD COLUMN blocked_reason VARCHAR(255) NULL").catch(() => undefined);
+  await queryDb(`
     CREATE TABLE IF NOT EXISTS reservations (
       id VARCHAR(36) PRIMARY KEY,
       user_id VARCHAR(36) NOT NULL,
@@ -134,7 +178,7 @@ async function ensureSchema() {
       CONSTRAINT reservations_user_id_fk FOREIGN KEY (user_id) REFERENCES users(id)
     )
   `);
-  await db.query(`
+  await queryDb(`
     CREATE TABLE IF NOT EXISTS services (
       id VARCHAR(36) PRIMARY KEY,
       name VARCHAR(120) NOT NULL,
@@ -146,16 +190,16 @@ async function ensureSchema() {
       updated_at DATETIME NOT NULL
     )
   `);
-  await db.query("ALTER TABLE services ADD COLUMN duration_minutes INT NOT NULL DEFAULT 30").catch(() => undefined);
-  await db.query("ALTER TABLE reservations ADD COLUMN duration_minutes INT NOT NULL DEFAULT 30").catch(() => undefined);
-  await db.query("ALTER TABLE reservations ADD COLUMN calendar_event_id VARCHAR(255) NULL").catch(() => undefined);
-  await db.query("ALTER TABLE reservations ADD COLUMN series_id VARCHAR(36) NULL").catch(() => undefined);
-  await db.query("ALTER TABLE reservations ADD COLUMN series_index INT NULL").catch(() => undefined);
-  await db.query("ALTER TABLE reservations ADD COLUMN start_at_utc DATETIME NULL").catch(() => undefined);
-  await db.query("ALTER TABLE reservations ADD COLUMN end_at_utc DATETIME NULL").catch(() => undefined);
-  await db.query("CREATE INDEX reservations_series_id_idx ON reservations (series_id)").catch(() => undefined);
-  await db.query("CREATE UNIQUE INDEX reservations_series_index_idx ON reservations (series_id, series_index)").catch(() => undefined);
-  await db.query(`
+  await queryDb("ALTER TABLE services ADD COLUMN duration_minutes INT NOT NULL DEFAULT 30").catch(() => undefined);
+  await queryDb("ALTER TABLE reservations ADD COLUMN duration_minutes INT NOT NULL DEFAULT 30").catch(() => undefined);
+  await queryDb("ALTER TABLE reservations ADD COLUMN calendar_event_id VARCHAR(255) NULL").catch(() => undefined);
+  await queryDb("ALTER TABLE reservations ADD COLUMN series_id VARCHAR(36) NULL").catch(() => undefined);
+  await queryDb("ALTER TABLE reservations ADD COLUMN series_index INT NULL").catch(() => undefined);
+  await queryDb("ALTER TABLE reservations ADD COLUMN start_at_utc DATETIME NULL").catch(() => undefined);
+  await queryDb("ALTER TABLE reservations ADD COLUMN end_at_utc DATETIME NULL").catch(() => undefined);
+  await queryDb("CREATE INDEX reservations_series_id_idx ON reservations (series_id)").catch(() => undefined);
+  await queryDb("CREATE UNIQUE INDEX reservations_series_index_idx ON reservations (series_id, series_index)").catch(() => undefined);
+  await queryDb(`
     CREATE TABLE IF NOT EXISTS blocked_slots (
       id VARCHAR(36) PRIMARY KEY,
       date DATE NOT NULL,
@@ -165,7 +209,7 @@ async function ensureSchema() {
       UNIQUE KEY blocked_slots_date_time_idx (date, time)
     )
   `);
-  await db.query(`
+  await queryDb(`
     CREATE TABLE IF NOT EXISTS working_hours (
       day_of_week TINYINT PRIMARY KEY,
       label VARCHAR(40) NOT NULL,
@@ -177,7 +221,7 @@ async function ensureSchema() {
       updated_at DATETIME NOT NULL
     )
   `);
-  await db.query(`
+  await queryDb(`
     CREATE TABLE IF NOT EXISTS recurring_series (
       id VARCHAR(36) PRIMARY KEY,
       user_id VARCHAR(36) NOT NULL,
@@ -202,7 +246,7 @@ async function ensureSchema() {
       CONSTRAINT recurring_series_user_id_fk FOREIGN KEY (user_id) REFERENCES users(id)
     )
   `);
-  await db.query(`
+  await queryDb(`
     CREATE TABLE IF NOT EXISTS password_reset_tokens (
       id VARCHAR(36) PRIMARY KEY,
       user_id VARCHAR(36) NOT NULL,
@@ -216,13 +260,13 @@ async function ensureSchema() {
     )
   `);
 
-  const [serviceRows] = await db.execute<mysql.RowDataPacket[]>(
+  const [serviceRows] = await executeDb<mysql.RowDataPacket[]>(
     "SELECT COUNT(*) AS total FROM services",
   );
   if (Number(serviceRows[0]?.total || 0) === 0) {
     await Promise.all(
       defaultServiceCatalog.map((service) =>
-        db.execute(
+        executeDb(
           `INSERT INTO services (id, name, price, duration_minutes, description, active, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           [
@@ -240,13 +284,13 @@ async function ensureSchema() {
     );
   }
 
-  const [workingRows] = await db.execute<mysql.RowDataPacket[]>(
+  const [workingRows] = await executeDb<mysql.RowDataPacket[]>(
     "SELECT COUNT(*) AS total FROM working_hours",
   );
   if (Number(workingRows[0]?.total || 0) === 0) {
     await Promise.all(
       defaultWorkingHours.map((day) =>
-        db.execute(
+        executeDb(
           `INSERT INTO working_hours
            (day_of_week, label, active, morning_start, morning_end, afternoon_start, afternoon_end, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -478,7 +522,7 @@ export async function getWorkingHours(): Promise<WorkingDay[]> {
   await ensureSchema();
 
   if (hasMysqlConfig()) {
-    const [rows] = await getPool().execute<mysql.RowDataPacket[]>(
+    const [rows] = await executeDb<mysql.RowDataPacket[]>(
       `SELECT day_of_week, label, active, morning_start, morning_end, afternoon_start, afternoon_end
        FROM working_hours
        ORDER BY FIELD(day_of_week, 1, 2, 3, 4, 5, 6, 0)`,
@@ -517,7 +561,7 @@ export async function saveWorkingHours(days: WorkingDay[]) {
   if (hasMysqlConfig()) {
     await Promise.all(
       sanitized.map((day) =>
-        getPool().execute(
+        executeDb(
           `INSERT INTO working_hours
            (day_of_week, label, active, morning_start, morning_end, afternoon_start, afternoon_end, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -563,7 +607,7 @@ export async function listServices(includeInactive = false): Promise<ServiceItem
   await ensureSchema();
 
   if (hasMysqlConfig()) {
-    const [rows] = await getPool().execute<mysql.RowDataPacket[]>(
+    const [rows] = await executeDb<mysql.RowDataPacket[]>(
       `SELECT id, name, price, duration_minutes, description, active
        FROM services
        ${includeInactive ? "" : "WHERE active = 1"}
@@ -610,7 +654,7 @@ export async function upsertService(input: Partial<ServiceItem> & Pick<ServiceIt
   if (!service.name) throw new Error("El nombre del servicio es obligatorio.");
 
   if (hasMysqlConfig()) {
-    await getPool().execute(
+    await executeDb(
       `INSERT INTO services (id, name, price, duration_minutes, description, active, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE
@@ -644,7 +688,7 @@ export async function deleteService(id: string) {
   await ensureSchema();
 
   if (hasMysqlConfig()) {
-    await getPool().execute("UPDATE services SET active = 0, updated_at = ? WHERE id = ?", [
+    await executeDb("UPDATE services SET active = 0, updated_at = ? WHERE id = ?", [
       new Date(),
       id,
     ]);
@@ -661,7 +705,7 @@ export async function listBlockedSlots(): Promise<BlockedSlot[]> {
   await ensureSchema();
 
   if (hasMysqlConfig()) {
-    const [rows] = await getPool().execute<mysql.RowDataPacket[]>(
+    const [rows] = await executeDb<mysql.RowDataPacket[]>(
       `SELECT id, date, time, reason, created_at
        FROM blocked_slots
        ORDER BY date ASC, time ASC`,
@@ -692,7 +736,7 @@ export async function addBlockedSlot(input: { date: string; time: string; reason
   };
 
   if (hasMysqlConfig()) {
-    await getPool().execute(
+    await executeDb(
       `INSERT INTO blocked_slots (id, date, time, reason, created_at)
        VALUES (?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE reason = VALUES(reason)`,
@@ -721,7 +765,7 @@ export async function deleteBlockedSlot(id: string) {
   await ensureSchema();
 
   if (hasMysqlConfig()) {
-    await getPool().execute("DELETE FROM blocked_slots WHERE id = ?", [id]);
+    await executeDb("DELETE FROM blocked_slots WHERE id = ?", [id]);
   } else {
     memoryBlockedSlots = (await readLocalBlockedSlots()).filter((slot) => slot.id !== id);
     await writeJson(localBlockedSlotsFile, memoryBlockedSlots);
@@ -865,7 +909,7 @@ export async function createUser(input: {
   };
 
   if (hasMysqlConfig()) {
-    await getPool().execute(
+    await executeDb(
       `INSERT INTO users (id, name, phone, email, password_hash, created_at)
        VALUES (?, ?, ?, ?, ?, ?)`,
       [user.id, user.name, user.phone, user.email, user.passwordHash, new Date(user.createdAt)],
@@ -888,7 +932,7 @@ export async function findUserByCredentials(email: string, password: string) {
   const normalizedEmail = email.trim().toLowerCase();
 
   if (hasMysqlConfig()) {
-    const [rows] = await getPool().execute<mysql.RowDataPacket[]>(
+    const [rows] = await executeDb<mysql.RowDataPacket[]>(
       `SELECT id, name, phone, email, password_hash, blocked_at, blocked_reason, created_at
        FROM users
        WHERE email = ?
@@ -921,7 +965,7 @@ export async function findUserByEmail(email: string) {
   const normalizedEmail = email.trim().toLowerCase();
 
   if (hasMysqlConfig()) {
-    const [rows] = await getPool().execute<mysql.RowDataPacket[]>(
+    const [rows] = await executeDb<mysql.RowDataPacket[]>(
       `SELECT id, name, phone, email, blocked_at, blocked_reason, created_at
        FROM users
        WHERE email = ?
@@ -951,7 +995,7 @@ export async function getUserById(id: string) {
   await ensureSchema();
 
   if (hasMysqlConfig()) {
-    const [rows] = await getPool().execute<mysql.RowDataPacket[]>(
+    const [rows] = await executeDb<mysql.RowDataPacket[]>(
       `SELECT id, name, phone, email, blocked_at, blocked_reason, created_at
        FROM users
        WHERE id = ?
@@ -980,7 +1024,7 @@ export async function listUsers(): Promise<User[]> {
   await ensureSchema();
 
   if (hasMysqlConfig()) {
-    const [rows] = await getPool().execute<mysql.RowDataPacket[]>(
+    const [rows] = await executeDb<mysql.RowDataPacket[]>(
       `SELECT id, name, phone, email, blocked_at, blocked_reason, created_at
        FROM users
        ORDER BY created_at DESC`,
@@ -1010,7 +1054,7 @@ export async function setUserBlocked(input: {
   const blockedAt = input.blocked ? new Date() : null;
 
   if (hasMysqlConfig()) {
-    await getPool().execute(
+    await executeDb(
       "UPDATE users SET blocked_at = ?, blocked_reason = ? WHERE id = ?",
       [blockedAt, input.blocked ? reason : null, input.userId],
     );
@@ -1061,11 +1105,11 @@ export async function createPasswordResetToken(email: string) {
   };
 
   if (hasMysqlConfig()) {
-    await getPool().execute("DELETE FROM password_reset_tokens WHERE user_id = ? OR expires_at < ?", [
+    await executeDb("DELETE FROM password_reset_tokens WHERE user_id = ? OR expires_at < ?", [
       user.id,
       new Date(),
     ]);
-    await getPool().execute(
+    await executeDb(
       `INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at, used_at, created_at)
        VALUES (?, ?, ?, ?, ?, ?)`,
       [
@@ -1097,7 +1141,7 @@ export async function resetPasswordWithToken(token: string, password: string) {
   const tokenHash = hashResetToken(token);
 
   if (hasMysqlConfig()) {
-    const [rows] = await getPool().execute<mysql.RowDataPacket[]>(
+    const [rows] = await executeDb<mysql.RowDataPacket[]>(
       `SELECT id, user_id, expires_at, used_at
        FROM password_reset_tokens
        WHERE token_hash = ?
@@ -1107,11 +1151,11 @@ export async function resetPasswordWithToken(token: string, password: string) {
     const row = rows[0];
     if (!row || row.used_at || new Date(row.expires_at).getTime() < Date.now()) return false;
 
-    await getPool().execute("UPDATE users SET password_hash = ? WHERE id = ?", [
+    await executeDb("UPDATE users SET password_hash = ? WHERE id = ?", [
       hashPassword(password),
       row.user_id,
     ]);
-    await getPool().execute("UPDATE password_reset_tokens SET used_at = ? WHERE id = ?", [
+    await executeDb("UPDATE password_reset_tokens SET used_at = ? WHERE id = ?", [
       new Date(),
       row.id,
     ]);
@@ -1145,7 +1189,7 @@ export async function listReservations(): Promise<Reservation[]> {
   await ensureSchema();
 
   if (hasMysqlConfig()) {
-    const [rows] = await getPool().execute<mysql.RowDataPacket[]>(
+    const [rows] = await executeDb<mysql.RowDataPacket[]>(
       `SELECT id, user_id, name, phone, email, service, price, duration_minutes, calendar_event_id, series_id, series_index, date, time, status, created_at
        FROM reservations
        ORDER BY created_at DESC`,
@@ -1177,7 +1221,7 @@ export async function listReservationsByUser(userId: string): Promise<Reservatio
   await ensureSchema();
 
   if (hasMysqlConfig()) {
-    const [rows] = await getPool().execute<mysql.RowDataPacket[]>(
+    const [rows] = await executeDb<mysql.RowDataPacket[]>(
       `SELECT id, user_id, name, phone, email, service, price, duration_minutes, calendar_event_id, series_id, series_index, date, time, status, created_at
        FROM reservations
        WHERE user_id = ?
@@ -1214,7 +1258,7 @@ export async function getReservationById(id: string): Promise<Reservation | null
   await ensureSchema();
 
   if (hasMysqlConfig()) {
-    const [rows] = await getPool().execute<mysql.RowDataPacket[]>(
+    const [rows] = await executeDb<mysql.RowDataPacket[]>(
       `SELECT id, user_id, name, phone, email, service, price, duration_minutes, calendar_event_id, series_id, series_index, date, time, status, created_at
        FROM reservations
        WHERE id = ?
@@ -1251,7 +1295,7 @@ export async function deleteReservation(id: string) {
   await ensureSchema();
 
   if (hasMysqlConfig()) {
-    await getPool().execute("DELETE FROM reservations WHERE id = ?", [id]);
+    await executeDb("DELETE FROM reservations WHERE id = ?", [id]);
     return;
   }
 
@@ -1264,7 +1308,7 @@ export async function updateReservationCalendarEventId(id: string, calendarEvent
   await ensureSchema();
 
   if (hasMysqlConfig()) {
-    await getPool().execute("UPDATE reservations SET calendar_event_id = ? WHERE id = ?", [
+    await executeDb("UPDATE reservations SET calendar_event_id = ? WHERE id = ?", [
       calendarEventId,
       id,
     ]);
@@ -1286,7 +1330,7 @@ export async function updateReservationSchedule(
   const utcRange = getReservationUtcRange(input.date, input.time, input.durationMinutes);
 
   if (hasMysqlConfig()) {
-    await getPool().execute(
+    await executeDb(
       "UPDATE reservations SET date = ?, time = ?, duration_minutes = ?, start_at_utc = ?, end_at_utc = ? WHERE id = ?",
       [input.date, input.time, input.durationMinutes, utcRange.start, utcRange.end, id],
     );
@@ -1340,7 +1384,7 @@ export async function saveReservation(
   };
 
   if (hasMysqlConfig()) {
-    await getPool().execute(
+    await executeDb(
       `INSERT INTO reservations
        (id, user_id, name, phone, email, service, price, duration_minutes, calendar_event_id, series_id, series_index, date, time, status, created_at, start_at_utc, end_at_utc)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -1424,7 +1468,7 @@ export async function saveRecurringReservations(
   };
 
   if (hasMysqlConfig()) {
-    await getPool().execute(
+    await executeDb(
       `INSERT INTO recurring_series
        (id, user_id, name, phone, email, service, price, duration_minutes, recurrence_rule,
         recurrence_interval, recurrence_end_mode, recurrence_end_date, recurrence_count,
@@ -1476,7 +1520,7 @@ export async function listRecurringSeries(): Promise<RecurringSeries[]> {
   await ensureSchema();
 
   if (hasMysqlConfig()) {
-    const [rows] = await getPool().execute<mysql.RowDataPacket[]>(
+    const [rows] = await executeDb<mysql.RowDataPacket[]>(
       `SELECT
         s.id, s.user_id, s.name, s.phone, s.email, s.service, s.price, s.duration_minutes,
         s.recurrence_rule, s.recurrence_interval, s.recurrence_end_mode,
@@ -1551,7 +1595,7 @@ export async function updateRecurringSeriesStatus(id: string, status: RecurringS
   await ensureSchema();
 
   if (hasMysqlConfig()) {
-    await getPool().execute("UPDATE recurring_series SET status = ?, updated_at = ? WHERE id = ?", [
+    await executeDb("UPDATE recurring_series SET status = ?, updated_at = ? WHERE id = ?", [
       status,
       new Date(),
       id,
@@ -1575,7 +1619,7 @@ export async function deleteReservationsBySeries(seriesId: string) {
   const reservations = await listReservationsBySeries(seriesId);
 
   if (hasMysqlConfig()) {
-    await getPool().execute("DELETE FROM reservations WHERE series_id = ?", [seriesId]);
+    await executeDb("DELETE FROM reservations WHERE series_id = ?", [seriesId]);
   } else {
     memoryReservations = (await readLocalReservations()).filter(
       (reservation) => reservation.seriesId !== seriesId,
